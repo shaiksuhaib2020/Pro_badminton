@@ -54,6 +54,15 @@ export default function ReEnrollModal({
     : format(addDays(parseISO(startDate), selectedType?.duration || 0), 'yyyy-MM-dd')
 
   const handleConfirm = () => {
+    if (!startDate) {
+      setToast({ type: 'error', message: 'Please select a start date.' })
+      return
+    }
+    if (startDate < format(new Date(), 'yyyy-MM-dd')) {
+      setToast({ type: 'error', message: 'Start date cannot be in the past.' })
+      return
+    }
+
     if (isPartial && amountPaying + partialDue !== clampedFee) {
       setToast({ type: 'error', message: `Paying Now + Partial Due must equal ${clampedFee.toLocaleString('en-IN')}` })
       return
@@ -283,15 +292,23 @@ export default function ReEnrollModal({
 
             <div className="grid grid-cols-2 gap-3 p-3 bg-so-surface rounded-lg border border-so-border">
               <div>
-                <p className="text-xs text-so-muted mb-1">Period Start</p>
-                <p className="text-sm text-so-text">
-                  {newMembershipStartDate ? formatDate(newMembershipStartDate) : '...'}
-                </p>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Period Start
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
+                />
               </div>
               <div>
-                <p className="text-xs text-so-muted mb-1">New Due Date</p>
-                <p className="text-sm text-[#5278EA] font-semibold">
-                  {nextDue ? formatDate(nextDue) : '...'}
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Next Due Date
+                </label>
+                <p className="text-sm font-semibold text-[#5278EA] mt-2.5">
+                  {startDate ? format(parseISO(nextDue), 'dd MMM yyyy') : ''}
                 </p>
               </div>
             </div>

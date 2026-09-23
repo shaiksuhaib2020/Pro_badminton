@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutDashboard, Users, Database, CalendarDays, UserPlus, Settings, Receipt } from 'lucide-react'
+import { LayoutDashboard, Users, Database, UserPlus, Settings, Receipt, LayoutGrid, BookOpen, Package, PieChart } from 'lucide-react'
 
 const NAV_ITEMS = [
   {
@@ -13,19 +13,35 @@ const NAV_ITEMS = [
     icon: <LayoutDashboard className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
   },
   {
+    href: '/reports',
+    label: 'Reports & Analysis',
+    icon: <PieChart className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+  },
+  {
     href: '/students',
-    label: 'Students',
+    label: 'Members',
     icon: <Users className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+  },
+  {
+    href: '/batches',
+    label: 'Batches',
+    icon: <LayoutGrid className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
   },
   {
     href: '/transactions',
     label: 'Fee Transactions',
     icon: <Receipt className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
   },
+
   {
-    href: '/events',
-    label: 'Upcoming Events',
-    icon: <CalendarDays className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+    href: '/inventory',
+    label: 'Inventory',
+    icon: <Package className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+  },
+  {
+    href: '/accounts',
+    label: 'Accounts',
+    icon: <BookOpen className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
   },
   { type: 'divider' },
   {
@@ -37,14 +53,18 @@ const NAV_ITEMS = [
 
 const PAGE_NAMES: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/reports': 'Reports & Analysis',
   '/students': 'Students',
+  '/batches': 'Batches',
+  
   '/transactions': 'Fee Transactions',
-  '/events': 'Upcoming Events',
+  '/inventory': 'Inventory',
+  '/accounts': 'Accounts',
   '/settings': 'Management Settings',
 }
 
 export function getPageName(pathname: string): string {
-  return PAGE_NAMES[pathname] ?? 'Pro Badminton'
+  return PAGE_NAMES[pathname] ?? 'EzyFee'
 }
 
 export default function Sidebar({ userEmail }: { userEmail: string }) {
@@ -72,7 +92,7 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
             <img src="/pro_logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-white leading-tight tracking-tight">Pro Badminton</p>
+            <p className="text-sm font-bold text-white leading-tight tracking-tight">EzyFee</p>
             <p className="text-xs text-white/50 mt-0.5 tracking-wide">Management System</p>
           </div>
         </div>

@@ -59,17 +59,26 @@ export default function RenewModal({
     }
   }, [periods, isCollectingRemaining, student, totalAmount, isPartial])
   
-  const newMembershipStartDate = isCollectingRemaining
-    ? student.membershipStartDate
-    : student.nextDueDate
+  const [periodStart, setPeriodStart] = useState<string>(student.nextDueDate)
 
   const newDueDate = isCollectingRemaining
     ? student.nextDueDate
     : (mt?.durationType === 'months'
-        ? format(addMonths(parseISO(student.nextDueDate), mt.duration * periods), 'yyyy-MM-dd')
-        : format(addDays(parseISO(student.nextDueDate), (mt?.duration || 0) * periods), 'yyyy-MM-dd'))
+        ? format(addMonths(parseISO(periodStart), mt.duration * periods), 'yyyy-MM-dd')
+        : format(addDays(parseISO(periodStart), (mt?.duration || 0) * periods), 'yyyy-MM-dd'))
 
   const handleConfirm = () => {
+    if (!isCollectingRemaining) {
+      if (!periodStart) {
+        setToast({ type: 'error', message: 'Please select a period start date.' })
+        return
+      }
+      if (periodStart < format(new Date(), 'yyyy-MM-dd')) {
+        setToast({ type: 'error', message: 'Period start date cannot be in the past.' })
+        return
+      }
+    }
+
     if (isPartial && amountPaying + partialDue !== totalAmount) {
       setToast({ type: 'error', message: `Paying Now + Partial Due must equal ${totalAmount.toLocaleString('en-IN')}` })
       return
@@ -99,7 +108,7 @@ export default function RenewModal({
 
     setToast({ type: 'success', message: `${isCollectingRemaining ? 'Remaining payment collected' : 'Membership renewed'} successfully` })
     setTimeout(() => {
-      onConfirm(newEntry, newDueDate, newMembershipStartDate, effectiveRemaining, selectedBatch)
+      onConfirm(newEntry, newDueDate, isCollectingRemaining ? student.membershipStartDate : periodStart, effectiveRemaining, selectedBatch)
     }, 2000)
   }
 
@@ -302,20 +311,33 @@ export default function RenewModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 p-3 bg-so-surface rounded-lg border border-so-border">
-            <div>
-              <p className="text-xs text-so-muted mb-1">Period Start</p>
-              <p className="text-sm text-[#5278EA] font-medium">
-                {format(parseISO(newMembershipStartDate), 'dd MMM yyyy')}
-              </p>
+          {!isCollectingRemaining && (
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Period Start
+                </label>
+                <input
+                  type="date"
+                  value={periodStart}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  onChange={e => setPeriodStart(e.target.value)}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
+                />
+                <p className="text-xs text-so-muted mt-1">
+                  Defaults to current due date
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  New Due Date
+                </label>
+                <p className="text-sm font-semibold text-[#5278EA] mt-2.5">
+                  {periodStart ? format(parseISO(newDueDate), 'dd MMM yyyy') : ''}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-so-muted mb-1">New Due Date</p>
-              <p className="text-sm text-[#5278EA] font-semibold">
-                {format(parseISO(newDueDate), 'dd MMM yyyy')}
-              </p>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}

@@ -45,7 +45,7 @@ export default function DashboardPage() {
 
   // 2. Due
   const dueAmount = mockStudents
-    .filter(s => s.status !== 'off-court')
+    .filter(s => s.status !== 'dropout')
     .reduce((sum, s) => {
       if (s.pendingAmount > 0) return sum + s.pendingAmount
       if (s.status === 'expired' || s.status === 'due-soon') return sum + s.fees
@@ -59,11 +59,30 @@ export default function DashboardPage() {
   const activeStudentCount = mockStudents.filter(s =>
     s.status === 'active' || s.status === 'due-soon' || s.status === 'expired'
   ).length
-  const offCourtCount = mockStudents.filter(s => s.status === 'off-court').length
+  const offCourtCount = mockStudents.filter(s => s.status === 'dropout').length
+
+
+  // Payment Modes
+  const filteredPayments = mockStudents
+    .flatMap(s => s.paymentHistory)
+    .filter(p => p.status !== 'deleted')
+    .filter(p => {
+      try { return isWithinInterval(parseISO(p.date), range) } catch { return false }
+    })
+
+  const modeAmounts = {
+    cash: filteredPayments.filter(p => p.paymentMethod === 'cash').reduce((sum, p) => sum + p.amount, 0),
+    upi:  filteredPayments.filter(p => p.paymentMethod === 'upi').reduce((sum, p) => sum + p.amount, 0),
+    card: filteredPayments.filter(p => p.paymentMethod === 'card').reduce((sum, p) => sum + p.amount, 0),
+    other:filteredPayments.filter(p => p.paymentMethod === 'other').reduce((sum, p) => sum + p.amount, 0),
+  }
+  const modeTotal = Object.values(modeAmounts).reduce((a, b) => a + b, 0)
+  const modePct = (val: number) =>
+    modeTotal > 0 ? Math.round((val / modeTotal) * 100) : 0
 
   const batchStats = mockSettings.batches.map(batch => {
     const batchStudents = mockStudents.filter(s =>
-      s.currentBatch === batch && s.status !== 'off-court'
+      s.currentBatch === batch && s.status !== 'dropout'
     )
 
     const expected = batchStudents.reduce((sum, s) => sum + s.fees, 0)
@@ -273,6 +292,70 @@ export default function DashboardPage() {
             ))
           )}
         </div>
+      </div>
+
+      {/* Payment Modes card */}
+      <div className="bg-so-card border border-so-border rounded-xl shadow-sm p-5 mt-6">
+        <h2 className="text-sm font-semibold text-so-text mb-4">Payment Modes</h2>
+
+        {modeTotal === 0 ? (
+          <p className="text-sm text-so-muted text-center py-4">
+            No payments recorded in this period.
+          </p>
+        ) : (
+          <>
+            {/* Segmented bar */}
+            <div className="flex w-full h-3 rounded-full overflow-hidden gap-0.5 mb-4">
+              {modePct(modeAmounts.cash) > 0 && (
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{ width: `${modePct(modeAmounts.cash)}%` }}
+                />
+              )}
+              {modePct(modeAmounts.upi) > 0 && (
+                <div
+                  className="h-full rounded-full bg-amber-400 transition-all"
+                  style={{ width: `${modePct(modeAmounts.upi)}%` }}
+                />
+              )}
+              {modePct(modeAmounts.card) > 0 && (
+                <div
+                  className="h-full rounded-full bg-so-accent transition-all"
+                  style={{ width: `${modePct(modeAmounts.card)}%` }}
+                />
+              )}
+              {modePct(modeAmounts.other) > 0 && (
+                <div
+                  className="h-full rounded-full bg-slate-400 transition-all"
+                  style={{ width: `${modePct(modeAmounts.other)}%` }}
+                />
+              )}
+            </div>
+
+            {/* Legend */}
+            <div className="grid grid-cols-4 gap-4">
+              {[
+                { label: 'Cash',  amount: modeAmounts.cash,  color: 'bg-emerald-500', text: 'text-emerald-600' },
+                { label: 'UPI',   amount: modeAmounts.upi,   color: 'bg-amber-400',   text: 'text-amber-600'  },
+                { label: 'Card',  amount: modeAmounts.card,  color: 'bg-so-accent',   text: 'text-so-accent'  },
+                { label: 'Other', amount: modeAmounts.other, color: 'bg-slate-400',   text: 'text-slate-500'  },
+              ].map(({ label, amount, color, text }) => (
+                <div key={label} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color}`} />
+                    <span className="text-xs text-so-muted">{label}</span>
+                  </div>
+                  <p className={`text-sm font-semibold ${text}`}>
+                    {modePct(amount)}%
+                  </p>
+                  <p className="text-xs text-so-muted">
+                    {amount.toLocaleString('en-IN')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pro Badminton - Management",
-  description: "Staff management portal for Pro Badminton courts",
+  title: "EzyFee",
+  description: "Fee management for coaching academies",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

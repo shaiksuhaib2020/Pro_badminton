@@ -9,9 +9,10 @@ import { useRouter } from 'next/navigation'
 type Props = {
   onClose: () => void
   onSuccess: () => void
+  defaultBatch?: string
 }
 
-export default function AddStudentModal({ onClose, onSuccess }: Props) {
+export default function AddStudentModal({ onClose, onSuccess, defaultBatch }: Props) {
   const router = useRouter()
   
   const [name, setName] = useState('')
@@ -19,7 +20,7 @@ export default function AddStudentModal({ onClose, onSuccess }: Props) {
   const [guardianName, setGuardianName] = useState('')
   const [alternatePhone, setAlternatePhone] = useState('')
   const [membershipTypeId, setMembershipTypeId] = useState(mockSettings.membershipTypes[0]?.id || '')
-  const [batch, setBatch] = useState(mockSettings.batches[0] || '')
+  const [batch, setBatch] = useState(defaultBatch ?? mockSettings.batches[0] ?? '')
   const [discountType, setDiscountType] = useState<'₹' | '%'>('₹')
   const [discountValue, setDiscountValue] = useState(0)
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'))
