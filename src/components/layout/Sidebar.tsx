@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutDashboard, Users, Database, UserPlus, Settings, Receipt, LayoutGrid, BookOpen, Package, PieChart } from 'lucide-react'
+import { mockSettings } from '@/lib/mock-data'
+import { LayoutDashboard, Users, Database, ClipboardList, Settings, Receipt, LayoutGrid, BookOpen, Package, PieChart, MessageCircle, BadgeCheck } from 'lucide-react'
 
-const NAV_ITEMS = [
+const getNavItems = () => [
   {
     href: '/dashboard',
     label: 'Dashboard',
@@ -19,8 +20,18 @@ const NAV_ITEMS = [
   },
   {
     href: '/students',
-    label: 'Members',
+    label: 'Students',
     icon: <Users className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+  },
+  ...(mockSettings.courtMembershipEnabled ? [{
+    href: '/court-memberships',
+    label: 'Court Memberships',
+    icon: <BadgeCheck className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+  }] : []),
+  {
+    href: '/enquiries',
+    label: 'Enquiries',
+    icon: <ClipboardList className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
   },
   {
     href: '/batches',
@@ -43,6 +54,11 @@ const NAV_ITEMS = [
     label: 'Accounts',
     icon: <BookOpen className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
   },
+  {
+    href: '/communications',
+    label: 'Communications',
+    icon: <MessageCircle className="w-5 h-5 shrink-0" strokeWidth={1.75} />,
+  },
   { type: 'divider' },
   {
     href: '/settings',
@@ -55,11 +71,14 @@ const PAGE_NAMES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/reports': 'Reports & Analysis',
   '/students': 'Students',
+  '/court-memberships': 'Court Memberships',
+  '/enquiries': 'Enquiries',
   '/batches': 'Batches',
   
   '/transactions': 'Fee Transactions',
   '/inventory': 'Inventory',
   '/accounts': 'Accounts',
+  '/communications': 'Communications',
   '/settings': 'Management Settings',
 }
 
@@ -71,6 +90,14 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [, setTick] = useState(0)
+
+  // Listen to custom settingsChange event so the sidebar can dynamically show/hide items like Court Memberships
+  useEffect(() => {
+    const handleSettingsChange = () => setTick(t => t + 1)
+    window.addEventListener('settingsChange', handleSettingsChange)
+    return () => window.removeEventListener('settingsChange', handleSettingsChange)
+  }, [])
 
   async function handleSignOut() {
     setIsLoggingOut(true)
@@ -100,12 +127,12 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
 
       {/* ── Navigation ── */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map((item, idx) => {
-          if (item.type === 'divider') {
+        {getNavItems().map((item, idx) => {
+          if ('type' in item && item.type === 'divider') {
             return <div key={`div-${idx}`} className="border-t border-white/10 mx-3 my-2" />
           }
 
-          const isActive = pathname === item.href
+          const isActive = pathname === item.href || (item.href === '/court-memberships' && pathname.startsWith('/court-memberships/'))
           
           return (
             <Link

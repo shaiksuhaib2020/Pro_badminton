@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { mockStudents, mockSettings, Student, PaymentEntry, mockCourtMembers, mockCourtPlans, CourtMember, CourtPaymentEntry } from '@/lib/mock-data'
-import { addMonths, addDays, isWithinInterval, parseISO, format, startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay } from 'date-fns'
+import { useRouter } from 'next/navigation'
+import { mockStudents, mockSettings, Student, PaymentEntry, mockCourtMemberships, mockCourtPlans, CourtMembership, CourtPaymentEntry, getMembershipDisplayLabel } from '@/lib/mock-data'
+import { addMonths, addDays, isWithinInterval, parseISO, format, startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay, differenceInDays } from 'date-fns'
+import { getTodayIST } from '@/lib/utils'
 import { Search, SlidersHorizontal, X, Receipt, CheckCircle, RefreshCw, Wallet, Trash2, AlertCircle, Clock, CheckSquare, Check, CreditCard } from 'lucide-react'
 import RenewModal from '@/components/coaching/RenewModal'
 import CollectRemainingModal from '@/components/students/CollectRemainingModal'
-import RenewCourtMemberModal from '@/components/court/RenewCourtMemberModal'
+import RenewCourtMembershipModal from '@/components/court/RenewCourtMembershipModal'
 
 type TabType = 'recent' | 'paid' | 'pending' | 'partial'
 type FilterRange = 'currentMonth' | 'lastMonth' | 'currentFY' | 'lastFY' | 'custom'
@@ -21,6 +23,7 @@ const getDaysLabel = (student: Student): string => {
 }
 
 export default function TransactionsPage() {
+  const router = useRouter()
   // Bulk collect  Pending tab only
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -97,7 +100,7 @@ export default function TransactionsPage() {
   const [courtTxTab, setCourtTxTab] = useState<TabType>('recent')
   const [courtSearchQuery, setCourtSearchQuery] = useState('')
   const [courtFilterRange, setCourtFilterRange] = useState<FilterRange>('currentMonth')
-  const [renewCourtTargetMember, setRenewCourtTargetMember] = useState<CourtMember | null>(null)
+  const [renewCourtTargetMember, setRenewCourtTargetMember] = useState<CourtMembership | null>(null)
 
   const [courtCustomFrom, setCourtCustomFrom] = useState('')
   const [courtCustomTo, setCourtCustomTo] = useState('')
@@ -127,21 +130,32 @@ export default function TransactionsPage() {
 
   const handleCourtAction = (memberId: string, action: string) => {
     // Collect/Renew/Buy
-    const member = mockCourtMembers.find(m => m.id === memberId)
+    const member = mockCourtMemberships.find(m => m.id === memberId)
     if (!member) return
     const plan = mockCourtPlans.find(p => p.id === member.planId)
     if (!plan) return
     
-    const amount = prompt(`Enter amount to collect (Plan price: ₹${plan.price}):`, String(plan.price))
+    let defaultAmount = String(plan.price)
+    let promptMsg = `Enter amount to collect (Plan price: ₹${plan.price}):`
+    if (action === 'collect_partial') {
+      defaultAmount = String(member.pendingAmount)
+      promptMsg = `Enter amount to collect for pending due (Remaining: ₹${member.pendingAmount}):`
+    }
+    
+    const amount = prompt(promptMsg, defaultAmount)
     if (!amount) return
     
     member.amountPaid += Number(amount)
     
+    if (action === 'collect_partial') {
+      member.pendingAmount = Math.max(0, member.pendingAmount - Number(amount))
+    }
+    
     // logic based on action
     if (action === 'renew' || action === 'buy') {
       member.status = 'active'
-      if (plan.planType === 'monthly' && plan.durationMonths && member.nextDueDate) {
-        member.nextDueDate = format(addMonths(parseISO(member.nextDueDate), plan.durationMonths), 'yyyy-MM-dd')
+      if (plan.planType === 'monthly' && plan.durationMonths && member.endDate) {
+        member.endDate = format(addMonths(parseISO(member.endDate), plan.durationMonths), 'yyyy-MM-dd')
       }
       if (plan.planType === 'sessions' && plan.totalSessions) {
         member.remainingSessions = plan.totalSessions
@@ -150,6 +164,7 @@ export default function TransactionsPage() {
 
     member.paymentHistory.push({
       id: crypto.randomUUID(),
+      membershipId: member.id,
       date: format(new Date(), 'yyyy-MM-dd'),
       amount: Number(amount),
       paymentMethod: 'cash',
@@ -162,23 +177,36 @@ export default function TransactionsPage() {
 
   const handleDeleteCourtEntry = (memberId: string, entryId: string) => {
     if (!confirm("Delete this payment record?")) return
-    const member = mockCourtMembers.find(m => m.id === memberId)
+    const member = mockCourtMemberships.find(m => m.id === memberId)
     if (!member) return
     const entry = member.paymentHistory.find(e => e.id === entryId)
     if (entry) {
       entry.status = 'deleted'
+      
+      member.amountPaid -= entry.amount
+      
+      const todayStr = getTodayIST()
+      if (member.endDate) {
+        if (member.endDate < todayStr) {
+          member.status = 'expired'
+        } else {
+          const daysUntil = differenceInDays(parseISO(member.endDate), parseISO(todayStr))
+          member.status = daysUntil <= 7 ? 'due-soon' : 'active'
+        }
+      }
+
       refresh()
     }
   }
 
   // Derived Court Data
   const courtDateRange = computeCourtRange(courtFilterRange, courtCustomFrom, courtCustomTo)
-  const courtRowsAll = mockCourtMembers.flatMap(m => 
+  const courtRowsAll = mockCourtMemberships.flatMap(m => 
     m.paymentHistory.map(tx => ({
       ...tx,
       memberId: m.id,
-      memberName: m.name,
-      memberPhone: m.phone
+      memberName: getMembershipDisplayLabel(m),
+      memberPhone: m.contactPhone
     }))
   )
 
@@ -206,7 +234,7 @@ export default function TransactionsPage() {
     })
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  const courtPendingRows = mockCourtMembers
+  const courtPendingRows = mockCourtMemberships
     .filter(m => {
       if (m.planType === 'monthly' && (m.status === 'expired' || m.status === 'due-soon')) return true
       if (m.planType === 'sessions' && m.status === 'exhausted') return true
@@ -215,10 +243,16 @@ export default function TransactionsPage() {
     .filter(m => {
       if (!courtSearchQuery) return true
       const q = courtSearchQuery.toLowerCase()
-      return m.name.toLowerCase().includes(q) || m.phone.includes(q)
+      return getMembershipDisplayLabel(m).toLowerCase().includes(q) || m.contactPhone.includes(q)
     })
 
-
+  const courtPartialRows = mockCourtMemberships
+    .filter(m => m.pendingAmount > 0)
+    .filter(m => {
+      if (!courtSearchQuery) return true
+      const q = courtSearchQuery.toLowerCase()
+      return getMembershipDisplayLabel(m).toLowerCase().includes(q) || m.contactPhone.includes(q)
+    })
 
   const computeRange = (range: FilterRange, cFrom: string, cTo: string) => {
     const now = new Date()
@@ -305,6 +339,16 @@ const searchPlaceholders: Record<TabType, string> = {
     const entry = student.paymentHistory.find(p => p.id === entryId)
     if (!entry) return
     entry.status = 'deleted'
+    
+    student.pendingAmount = (student.pendingAmount || 0) + entry.amount
+    const todayStr = getTodayIST()
+    if (student.nextDueDate < todayStr) {
+      student.status = 'expired'
+    } else {
+      const daysUntil = differenceInDays(parseISO(student.nextDueDate), parseISO(todayStr))
+      student.status = daysUntil <= 7 ? 'due-soon' : 'active'
+    }
+
     setVoidConfirmId(null)
     refresh()
   }
@@ -420,7 +464,7 @@ const searchPlaceholders: Record<TabType, string> = {
                       </thead>
                       <tbody className="divide-y divide-so-border">
                         {courtRecentRows.map(t => (
-                          <tr key={t.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
+                          <tr key={t.id} onClick={() => router.push(`/court-memberships/${t.membershipId}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
                             <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{t.memberName}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-so-muted">{t.memberPhone}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-so-text">{formatDateLabel(t.date)}</td>
@@ -428,12 +472,12 @@ const searchPlaceholders: Record<TabType, string> = {
                               ₹ {t.amount.toLocaleString('en-IN')}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">{t.paymentMethod}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                               {voidConfirmId === t.id ? (
                                 <div className="flex items-center justify-end gap-2">
                                   <span className="text-xs text-so-muted">Void transaction?</span>
                                   <button onClick={() => {
-                                    const m = mockCourtMembers.find(x => x.id === t.memberId);
+                                    const m = mockCourtMemberships.find(x => x.id === t.membershipId);
                                     if (m) {
                                       const e = m.paymentHistory.find(e => e.id === t.id);
                                       if (e) e.status = 'deleted';
@@ -444,9 +488,7 @@ const searchPlaceholders: Record<TabType, string> = {
                                   <button onClick={() => setVoidConfirmId(null)} className="text-xs px-2 py-1 border border-so-border rounded-md text-so-muted hover:text-so-text transition-colors">No</button>
                                 </div>
                               ) : (
-                                <button onClick={() => setVoidConfirmId(t.id)} className="p-1.5 rounded-md text-so-muted hover:text-so-red hover:bg-so-surface transition-colors cursor-pointer">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <button onClick={() => setVoidConfirmId(t.id)} className="flex items-center gap-1.5 text-xs text-so-muted hover:text-so-red transition-colors ml-auto"><Trash2 className="w-3.5 h-3.5" /> Wrong entry?</button>
                               )}
                             </td>
                           </tr>
@@ -480,18 +522,18 @@ const searchPlaceholders: Record<TabType, string> = {
                       </thead>
                       <tbody className="divide-y divide-so-border">
                         {courtPaidRows.map(t => (
-                          <tr key={t.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
+                          <tr key={t.id} onClick={() => router.push(`/court-memberships/${t.membershipId}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
                             <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{t.memberName}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-so-muted">{t.memberPhone}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-so-text">{formatDateLabel(t.date)}</td>
                             <td className="px-6 py-4 whitespace-nowrap font-semibold text-so-emerald">₹ {t.amount.toLocaleString('en-IN')}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">{t.paymentMethod}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                               {voidConfirmId === t.id ? (
                                 <div className="flex items-center justify-end gap-2">
                                   <span className="text-xs text-so-muted">Void transaction?</span>
                                   <button onClick={() => {
-                                    const m = mockCourtMembers.find(x => x.id === t.memberId);
+                                    const m = mockCourtMemberships.find(x => x.id === t.membershipId);
                                     if (m) {
                                       const e = m.paymentHistory.find(e => e.id === t.id);
                                       if (e) e.status = 'deleted';
@@ -502,9 +544,7 @@ const searchPlaceholders: Record<TabType, string> = {
                                   <button onClick={() => setVoidConfirmId(null)} className="text-xs px-2 py-1 border border-so-border rounded-md text-so-muted hover:text-so-text transition-colors">No</button>
                                 </div>
                               ) : (
-                                <button onClick={() => setVoidConfirmId(t.id)} className="p-1.5 rounded-md text-so-muted hover:text-so-red hover:bg-so-surface transition-colors cursor-pointer">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <button onClick={() => setVoidConfirmId(t.id)} className="flex items-center gap-1.5 text-xs text-so-muted hover:text-so-red transition-colors ml-auto"><Trash2 className="w-3.5 h-3.5" /> Wrong entry?</button>
                               )}
                             </td>
                           </tr>
@@ -539,24 +579,24 @@ const searchPlaceholders: Record<TabType, string> = {
                         {courtPendingRows.map(m => {
                           const plan = mockCourtPlans.find(p => p.id === m.planId)
                           return (
-                            <tr key={m.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
+                            <tr key={m.id} onClick={() => router.push(`/court-memberships/${m.id}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
                               <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">
-                                {m.name}
+                                {getMembershipDisplayLabel(m)}
                                 <span className={`ml-2 text-xs ${m.status === 'expired' || m.status === 'exhausted' ? 'text-red-500' : 'text-amber-500'}`}>
                                   ({m.status.replace('-', ' ')})
                                 </span>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-so-muted">{m.phone}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-so-muted">{m.contactPhone}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-so-text">
                                 {plan?.name}
                                 {m.planType === 'monthly' ? (
-                                  <span className="ml-2 text-xs text-so-muted">Due {m.nextDueDate ? formatDateLabel(m.nextDueDate) : '-'}</span>
+                                  <span className="ml-2 text-xs text-so-muted">Due {m.endDate ? formatDateLabel(m.endDate) : '-'}</span>
                                 ) : (
                                   <span className="ml-2 text-xs text-so-muted">0 / {m.totalSessions} Sessions left</span>
                                 )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-so-red font-semibold">₹ {plan?.price.toLocaleString('en-IN')}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                                 <button onClick={() => setRenewCourtTargetMember(m)} className="px-3 py-1.5 bg-so-accent text-so-accent-text rounded-lg text-xs font-semibold shadow-sm">Renew</button>
                               </td>
                             </tr>
@@ -570,9 +610,62 @@ const searchPlaceholders: Record<TabType, string> = {
             )}
 
             {courtTxTab === 'partial' && (
-              <div className="py-20 flex flex-col items-center justify-center text-so-muted">
-                <Receipt className="w-12 h-12 text-so-muted mb-4" strokeWidth={1.5} />
-                <p className="text-so-text font-medium">Partial payment tracking for court members coming soon.</p>
+              <div>
+                {courtPartialRows.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center">
+                    <CheckCircle className="w-12 h-12 text-so-emerald mb-4" strokeWidth={1.5} />
+                    <p className="text-so-text font-semibold">No partial payments outstanding</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-so-surface border-b border-so-border">
+                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Member</th>
+                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Phone</th>
+                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Date</th>
+                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Paid</th>
+                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Remaining</th>
+                          <th className="text-right px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-so-border">
+                        {courtPartialRows.map(m => {
+                          const latestPartial = m.paymentHistory
+                            .filter(p => p.status !== 'deleted')
+                            .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())[0]
+
+                          return (
+                            <tr key={m.id} onClick={() => router.push(`/court-memberships/${m.id}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
+                              <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{getMembershipDisplayLabel(m)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-so-muted">{m.contactPhone}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-so-text">
+                                {latestPartial ? formatDateLabel(latestPartial.date) : '-'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-so-emerald font-semibold">
+                                ₹ {m.amountPaid.toLocaleString('en-IN')}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-amber-600 font-semibold">
+                                ₹ {m.pendingAmount.toLocaleString('en-IN')}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex justify-end">
+                                  <button
+                                    onClick={() => handleCourtAction(m.id, 'collect_partial')}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-xs font-medium hover:bg-amber-500/30 transition-colors"
+                                  >
+                                    <Wallet className="w-3 h-3" />
+                                    Collect
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -665,7 +758,7 @@ const searchPlaceholders: Record<TabType, string> = {
                   </thead>
                   <tbody className="divide-y divide-so-border">
                     {recentRows.map(t => (
-                      <tr key={t.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
+                      <tr key={t.id} onClick={() => router.push(`/students/${t.studentId}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
                         <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{t.studentName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-so-muted">{t.studentPhone}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-so-text">{formatDateLabel(t.date)}</td>
@@ -725,7 +818,7 @@ const searchPlaceholders: Record<TabType, string> = {
                   </thead>
                   <tbody className="divide-y divide-so-border">
                     {paidRows.map(t => (
-                      <tr key={t.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
+                      <tr key={t.id} onClick={() => router.push(`/students/${t.studentId}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
                         <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{t.studentName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-so-muted">{t.studentPhone}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-so-text">{formatDateLabel(t.date)}</td>
@@ -735,7 +828,7 @@ const searchPlaceholders: Record<TabType, string> = {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">{t.paymentMethod}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                           {t.status !== 'deleted' ? (
                             voidConfirmId === t.id ? (
                               <div className="flex items-center justify-end gap-2">
@@ -746,10 +839,7 @@ const searchPlaceholders: Record<TabType, string> = {
                                   className="text-xs px-2 py-1 border border-so-border rounded-md text-so-muted hover:text-so-text transition-colors">No</button>
                               </div>
                             ) : (
-                              <button onClick={() => setVoidConfirmId(t.id)}
-                                className="p-1.5 inline-flex rounded-md text-so-muted hover:text-so-red hover:bg-so-surface transition-colors" title="Void Payment">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <button onClick={() => setVoidConfirmId(t.id)} className="flex items-center gap-1.5 text-xs text-so-muted hover:text-so-red transition-colors ml-auto"><Trash2 className="w-3.5 h-3.5" /> Wrong entry?</button>
                             )
                           ) : (
                             <span className="text-xs text-so-red italic">Voided</span>
@@ -816,18 +906,21 @@ const searchPlaceholders: Record<TabType, string> = {
                     {pendingRows.map(s => (
                       <tr key={s.id} 
                         onClick={() => {
-                          if (!bulkMode) return
-                          const next = new Set(selectedIds)
-                          if (next.has(s.id)) next.delete(s.id)
-                          else next.add(s.id)
-                          setSelectedIds(next)
+                          if (bulkMode) {
+                            const next = new Set(selectedIds)
+                            if (next.has(s.id)) next.delete(s.id)
+                            else next.add(s.id)
+                            setSelectedIds(next)
+                          } else {
+                            router.push(`/students/${s.id}`)
+                          }
                         }}
                         className={`border-b border-so-border transition-colors ${
                           bulkMode
                             ? selectedIds.has(s.id)
                               ? 'bg-so-accent/5 cursor-pointer'
                               : 'hover:bg-so-surface/60 cursor-pointer'
-                            : 'bg-so-card hover:bg-so-surface/60'
+                            : 'bg-so-card hover:bg-so-surface/60 cursor-pointer'
                         }`}>
                         {bulkMode && (
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -874,7 +967,7 @@ const searchPlaceholders: Record<TabType, string> = {
                         <td className="px-6 py-4 whitespace-nowrap text-so-emerald font-semibold">
                           ₹ {s.fees.toLocaleString('en-IN')}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end">
                             <button
                               onClick={(e) => { e.stopPropagation(); setRenewTarget(s); }}
@@ -955,7 +1048,7 @@ const searchPlaceholders: Record<TabType, string> = {
                         .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())[0]
 
                       return (
-                        <tr key={s.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
+                        <tr key={s.id} onClick={() => router.push(`/students/${s.id}`)} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors cursor-pointer">
                           <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{s.name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-so-muted">{s.phone}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-so-text">
@@ -970,7 +1063,7 @@ const searchPlaceholders: Record<TabType, string> = {
                           <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">
                             {latestPartial?.paymentMethod || '-'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end">
                               <button
                                 onClick={() => setCollectRemainingTarget(s)}
@@ -1201,8 +1294,8 @@ const searchPlaceholders: Record<TabType, string> = {
       )}
 
       {renewCourtTargetMember && (
-        <RenewCourtMemberModal
-          member={renewCourtTargetMember}
+        <RenewCourtMembershipModal
+          membership={renewCourtTargetMember}
           onClose={() => setRenewCourtTargetMember(null)}
           onSuccess={() => { setRenewCourtTargetMember(null); refresh(); }}
         />

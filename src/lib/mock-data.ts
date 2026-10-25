@@ -1,4 +1,26 @@
 import { format, subDays, addDays } from 'date-fns'
+
+export type EnquiryStatus = 'not-scheduled' | 'scheduled' | 'completed'
+
+export type Enquiry = {
+  id: string
+  name: string
+  phone: string
+  guardianName: string
+  notes?: string
+  status: EnquiryStatus
+  trialDate?: string   // YYYY-MM-DD — only present when status is 'scheduled' or 'completed'
+  createdAt: string    // YYYY-MM-DD
+}
+
+export let mockEnquiries: Enquiry[] = [
+  { id: 'eq1', name: 'Rahul Sharma',    phone: '9876543210', guardianName: 'Mohan Sharma',  status: 'not-scheduled', createdAt: '2026-10-01' },
+  { id: 'eq2', name: 'Priya Reddy',     phone: '9845612345', guardianName: 'Suresh Reddy',  status: 'scheduled',     trialDate: '2026-10-09', createdAt: '2026-09-29' },
+  { id: 'eq3', name: 'Arjun Mehta',     phone: '9123456780', guardianName: 'Vijay Mehta',   status: 'completed',     trialDate: '2026-10-04', createdAt: '2026-09-25' },
+  { id: 'eq4', name: 'Sneha Nair',      phone: '9654321098', guardianName: 'Ravi Nair',     status: 'not-scheduled', createdAt: '2026-10-05' },
+  { id: 'eq5', name: 'Kiran Babu',      phone: '9988776655', guardianName: 'Raju Babu',     status: 'scheduled',     trialDate: '2026-10-10', createdAt: '2026-10-03' },
+]
+
 export type PaymentEntry = {
   id: string
   date: string
@@ -17,6 +39,8 @@ export type Student = {
   phone: string
   alternatePhone: string
   guardianName: string
+  address?: string
+  email?: string
   membershipTypeId: string
   currentBatch: string
   fees: number
@@ -24,6 +48,10 @@ export type Student = {
   membershipStartDate: string
   nextDueDate: string
   status: 'active' | 'due-soon' | 'expired' | 'inactive' | 'dropout'
+  dateOfBirth?: string
+  enrollmentSource?: 'walk-in' | 'referral' | 'social-media' | 'other'
+  dropoutReason?: string
+  dropoutDate?: string
   pendingAmount: number
   internalNotes: string
   paymentHistory: PaymentEntry[]
@@ -42,37 +70,64 @@ export type CourtPlan = {
   validityDays?: number           // days before unused sessions expire
 }
 
+export type CourtPlanType = 'monthly' | 'sessions'
+
+export type CourtMembershipStatus =
+  | 'active' | 'due-soon' | 'expired'
+  | 'sessions-low' | 'exhausted' | 'inactive' | 'dropout'
+
+export type CourtPaymentEntryType = 'new' | 'renewal' | 'session-topup'
+export type CourtPaymentEntryStatus = 'active' | 'deleted'
+
 export type CourtPaymentEntry = {
   id: string
+  membershipId: string
   date: string
   amount: number
+  payingNow?: number
+  partialDue?: number
   paymentMethod: 'cash' | 'upi' | 'card' | 'other'
-  entryType: 'new' | 'renewal' | 'session-topup'
-  status: 'active' | 'deleted'
+  entryType: CourtPaymentEntryType
+  status: CourtPaymentEntryStatus
   note?: string
 }
 
-export type CourtMember = {
+export type CourtMembershipPerson = {
   id: string
+  membershipId: string
   name: string
-  phone: string
+}
+
+export type CourtCheckIn = {
+  id: string
+  membershipId: string
+  checkedInAt: string
+  sessionsAfter?: number
+  peopleCheckedIn: number
+}
+
+export const getMembershipPeopleCount = (m: CourtMembership) => 1 + m.people.length
+export const getMembershipDisplayLabel = (m: CourtMembership) => m.contactName
+
+export type CourtMembership = {
+  id: string
+  contactName: string
+  contactPhone: string
+  address?: string
+  email?: string
+  people: CourtMembershipPerson[]
   planId?: string
-  durationMonths?: number
-  planType: 'monthly' | 'sessions'
-  joiningDate: string
-  // Monthly
-  membershipStartDate?: string
-  nextDueDate?: string
-  // Sessions
+  planType: CourtPlanType
+  startDate: string
+  endDate: string
   totalSessions?: number
   remainingSessions?: number
-  // Shared
-  status: 'active' | 'due-soon' | 'expired' | 'sessions-low' | 'exhausted' | 'inactive' | 'dropout'
+  status: CourtMembershipStatus
   amountPaid: number
-  pendingAmount?: number
+  pendingAmount: number
   notes?: string
   paymentHistory: CourtPaymentEntry[]
-  checkInHistory: Array<{ id: string; date: string; sessionsAfter: number }>
+  checkInHistory: CourtCheckIn[]
 }
 
 export type MembershipType = {
@@ -137,6 +192,9 @@ export type Settings = {
   staffMembers: StaffMember[]
   membershipTypes: MembershipType[]
   batches: string[]
+  feeReminderEnabled: boolean
+  feeAckEnabled: boolean
+  birthdayWishEnabled: boolean
 }
 
 export interface Batch {
@@ -236,7 +294,7 @@ export const PERMISSION_MATRIX: ModulePermission[] = [
   { module: 'Fee Transactions', owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'full',    receptionist: 'collect' },
   { module: 'Accounts',         owner: 'full',    manager: 'view',    coach: 'none',    accountant: 'full',    receptionist: 'none'    },
   { module: 'Inventory',        owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'view',    receptionist: 'none'    },
-  { module: 'Court Members',    owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'view',    receptionist: 'collect' },
+  { module: 'Court Memberships',    owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'view',    receptionist: 'collect' },
   { module: 'Events',           owner: 'full',    manager: 'full',    coach: 'view',    accountant: 'none',    receptionist: 'view'    },
   { module: 'Settings',         owner: 'full',    manager: 'partial', coach: 'none',    accountant: 'none',    receptionist: 'none'    },
   { module: 'Staff Management', owner: 'full',    manager: 'view',    coach: 'none',    accountant: 'none',    receptionist: 'none'    },
@@ -269,60 +327,70 @@ export let mockCourtPlans: CourtPlan[] = [
   },
 ]
 
-export let mockCourtMembers: CourtMember[] = [
+export let mockCourtMemberships: CourtMembership[] = [
   {
     id: 'cm-1',
-    name: 'Rohit Kumar',
-    phone: '9876500001',
+    contactName: 'Rohit Kumar',
+    contactPhone: '9876500001',
+    people: [{ id: 'p-1', membershipId: 'cm-1', name: 'Rohit Kumar' }],
     planId: 'cp-1',
     planType: 'monthly',
-    joiningDate: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
-    membershipStartDate: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
-    nextDueDate: format(addDays(new Date(), 15), 'yyyy-MM-dd'),
+    startDate: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
+    endDate: format(addDays(new Date(), 15), 'yyyy-MM-dd'),
     status: 'active',
     amountPaid: 3000,
+    pendingAmount: 0,
     checkInHistory: [],
     paymentHistory: [
       {
-        id: 'cpe-1', date: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
+        id: 'cpe-1', membershipId: 'cm-1', date: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
         amount: 3000, paymentMethod: 'upi', entryType: 'new', status: 'active',
       },
     ],
   },
   {
     id: 'cm-2',
-    name: 'Deepa Reddy',
-    phone: '9876500002',
+    contactName: 'Deepa Reddy',
+    contactPhone: '9876500002',
+    people: [
+      { id: 'p-2', membershipId: 'cm-2', name: 'Deepa Reddy' },
+      { id: 'p-3', membershipId: 'cm-2', name: 'Ajay Reddy' }
+    ],
     planId: 'cp-2',
     planType: 'sessions',
-    joiningDate: format(subDays(new Date(), 20), 'yyyy-MM-dd'),
+    startDate: format(subDays(new Date(), 20), 'yyyy-MM-dd'),
+    endDate: format(addDays(new Date(), 40), 'yyyy-MM-dd'),
     totalSessions: 10,
     remainingSessions: 2,
     status: 'sessions-low',
     amountPaid: 1500,
+    pendingAmount: 0,
     checkInHistory: [],
     paymentHistory: [
       {
-        id: 'cpe-2', date: format(subDays(new Date(), 20), 'yyyy-MM-dd'),
+        id: 'cpe-2', membershipId: 'cm-2', date: format(subDays(new Date(), 20), 'yyyy-MM-dd'),
         amount: 1500, paymentMethod: 'cash', entryType: 'new', status: 'active',
       },
     ],
   },
   {
     id: 'cm-3',
-    name: 'Kavya Singh',
-    phone: '9876500003',
+    contactName: 'Kavya Singh',
+    contactPhone: '9876500003',
+    people: [{ id: 'p-4', membershipId: 'cm-3', name: 'Kavya Singh' }],
     planId: 'cp-3',
     planType: 'sessions',
-    joiningDate: format(subDays(new Date(), 45), 'yyyy-MM-dd'),
+    startDate: format(subDays(new Date(), 45), 'yyyy-MM-dd'),
+    endDate: format(addDays(new Date(), 15), 'yyyy-MM-dd'),
     totalSessions: 20,
     remainingSessions: 0,
     status: 'exhausted',
     amountPaid: 2500,
+    pendingAmount: 0,
     checkInHistory: [],
     paymentHistory: [
       {
-        id: 'cpe-3', date: format(subDays(new Date(), 45), 'yyyy-MM-dd'),
+        id: 'cpe-3', membershipId: 'cm-3', date: format(subDays(new Date(), 45), 'yyyy-MM-dd'),
         amount: 2500, paymentMethod: 'cash', entryType: 'new', status: 'active',
       },
     ],
@@ -333,6 +401,9 @@ export let mockAttendance: AttendanceRecord[] = []
 
 
 export let mockSettings: Settings = {
+  feeReminderEnabled: false,
+  feeAckEnabled: false,
+  birthdayWishEnabled: false,
   courtMembershipEnabled: false,
   courtPlans: [],
   courtName: 'EzyFee Badminton Academy',
@@ -430,6 +501,7 @@ export let mockStudents: Student[] = [
     id: 's1', name: 'Kabir Singh', phone: '9876543214', alternatePhone: '9876543200', guardianName: 'Ramesh Singh',
     membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2026-01-01', membershipStartDate: '2026-08-01',
     nextDueDate: '2026-09-01', status: 'due-soon', pendingAmount: 0, internalNotes: '',
+    dateOfBirth: '2012-05-10', enrollmentSource: 'walk-in',
     paymentHistory: [
       { id: 'p1', date: '2026-01-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
       { id: 'p2', date: '2026-02-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
@@ -440,6 +512,7 @@ export let mockStudents: Student[] = [
     id: 's2', name: 'Aditi Rao', phone: '9876543215', alternatePhone: '', guardianName: 'Sunita Rao',
     membershipTypeId: 'quarterly', currentBatch: 'Evening', fees: 4000, startDate: '2026-02-01', membershipStartDate: '2026-06-01',
     nextDueDate: '2026-09-01', status: 'due-soon', pendingAmount: 0, internalNotes: '',
+    dateOfBirth: '2010-08-22', enrollmentSource: 'referral',
     paymentHistory: [
       { id: 'p4', date: '2026-02-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' },
       { id: 'p5', date: '2026-06-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' }
@@ -449,6 +522,7 @@ export let mockStudents: Student[] = [
     id: 's3', name: 'Aryan Das', phone: '9876543216', alternatePhone: '', guardianName: 'Priya Das',
     membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2025-11-01', membershipStartDate: '2026-07-01',
     nextDueDate: '2026-08-01', status: 'expired', pendingAmount: 0, internalNotes: 'Prefers morning slot',
+    dateOfBirth: '2008-11-15', enrollmentSource: 'social-media',
     paymentHistory: [
       { id: 'p6', date: '2025-11-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
       { id: 'p7', date: '2026-07-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'other', status: 'active', note: '' }
@@ -458,6 +532,7 @@ export let mockStudents: Student[] = [
     id: 's4', name: 'Diya Kumar', phone: '9876543216', alternatePhone: '', guardianName: 'Priya Das',
     membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2025-11-15', membershipStartDate: '2026-07-15',
     nextDueDate: '2026-08-15', status: 'expired', pendingAmount: 0, internalNotes: 'Sibling of Aryan Das same guardian phone',
+    dateOfBirth: '2014-02-28', enrollmentSource: 'referral',
     paymentHistory: [
       { id: 'p8', date: '2025-11-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
       { id: 'p9', date: '2026-07-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' }
@@ -467,6 +542,7 @@ export let mockStudents: Student[] = [
     id: 's5', name: 'Aarav Sharma', phone: '9876543210', alternatePhone: '9876543211', guardianName: 'Vikram Sharma',
     membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2026-03-01', membershipStartDate: '2026-08-01',
     nextDueDate: '2026-09-01', status: 'active', pendingAmount: 0, internalNotes: '',
+    dateOfBirth: '2005-06-10', enrollmentSource: 'walk-in',
     paymentHistory: [
       { id: 'p10', date: '2026-03-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
       { id: 'p11', date: '2026-04-01', amount: 3000, remainingAmount: 0, paymentType: 'advance', monthsCovered: 2, paymentMethod: 'card', status: 'active', note: 'Paid via UPI receipt shared on WhatsApp' },
@@ -477,6 +553,7 @@ export let mockStudents: Student[] = [
     id: 's6', name: 'Arjun Mehta', phone: '9876543218', alternatePhone: '', guardianName: 'Suresh Mehta',
     membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2026-04-10', membershipStartDate: '2026-08-10',
     nextDueDate: '2026-09-10', status: 'active', pendingAmount: 500, internalNotes: 'Partial payment pending',
+    dateOfBirth: '2011-09-05', enrollmentSource: 'other',
     paymentHistory: [
       { id: 'p13', date: '2026-04-10', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'cash', status: 'active', note: '' },
       { id: 'p14', date: '2026-08-10', amount: 1000, remainingAmount: 500, paymentType: 'partial', monthsCovered: 1, paymentMethod: 'cash', status: 'active', note: '' }
@@ -486,6 +563,7 @@ export let mockStudents: Student[] = [
     id: 's7', name: 'Ananya Reddy', phone: '9876543213', alternatePhone: '', guardianName: 'Lakshmi Reddy',
     membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2026-02-15', membershipStartDate: '2026-08-15',
     nextDueDate: '2026-09-15', status: 'active', pendingAmount: 0, internalNotes: '',
+    dateOfBirth: '2009-12-12', enrollmentSource: 'social-media',
     paymentHistory: [
       { id: 'p15', date: '2026-02-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
       { id: 'p16', date: '2026-08-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' }
@@ -495,6 +573,7 @@ export let mockStudents: Student[] = [
     id: 's8', name: 'Vivaan Gupta', phone: '9876543211', alternatePhone: '', guardianName: 'Anil Gupta',
     membershipTypeId: 'quarterly', currentBatch: 'Evening', fees: 4000, startDate: '2026-01-01', membershipStartDate: '2026-07-01',
     nextDueDate: '2026-10-01', status: 'active', pendingAmount: 0, internalNotes: '',
+    dateOfBirth: '2013-04-18', enrollmentSource: 'referral',
     paymentHistory: [
       { id: 'p17', date: '2026-01-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' },
       { id: 'p18', date: '2026-07-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' }
@@ -504,6 +583,7 @@ export let mockStudents: Student[] = [
     id: 's9', name: 'Nisha Verma', phone: '9876543219', alternatePhone: '', guardianName: 'Meena Verma',
     membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2026-03-05', membershipStartDate: '2026-08-05',
     nextDueDate: '2026-11-05', status: 'active', pendingAmount: 0, internalNotes: '',
+    dateOfBirth: '2004-01-30', enrollmentSource: 'walk-in',
     paymentHistory: [
       { id: 'p19', date: '2026-03-05', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
       { id: 'p20', date: '2026-08-05', amount: 4500, remainingAmount: 0, paymentType: 'advance', monthsCovered: 3, paymentMethod: 'upi', status: 'active', note: '' }
@@ -513,6 +593,7 @@ export let mockStudents: Student[] = [
     id: 's10', name: 'Riya Patel', phone: '9876543212', alternatePhone: '', guardianName: 'Rajesh Patel',
     membershipTypeId: 'annual', currentBatch: 'Morning', fees: 14000, startDate: '2026-01-15', membershipStartDate: '2026-01-15',
     nextDueDate: '2027-01-15', status: 'active', pendingAmount: 0, internalNotes: 'Annual plan next due Jan 2027',
+    dateOfBirth: '1998-07-22', enrollmentSource: 'social-media',
     paymentHistory: [
       { id: 'p21', date: '2026-01-15', amount: 14000, remainingAmount: 0, paymentType: 'full', monthsCovered: 12, paymentMethod: 'upi', status: 'active', note: '' }
     ]
@@ -521,6 +602,7 @@ export let mockStudents: Student[] = [
     id: 's11', name: 'Zara Khan', phone: '9876543220', alternatePhone: '9876543221', guardianName: 'Imran Khan',
     membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1200, startDate: '2025-08-01', membershipStartDate: '2026-05-01',
     nextDueDate: '2026-06-01', status: 'dropout', pendingAmount: 0, internalNotes: 'Took a break may rejoin',
+    dateOfBirth: '2006-03-14', enrollmentSource: 'walk-in', dropoutReason: 'Relocated to another city', dropoutDate: '2026-07-20',
     paymentHistory: [
       { id: 'p22', date: '2025-08-01', amount: 1200, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'card', status: 'inactive', note: '' },
       { id: 'p23', date: '2026-05-01', amount: 1200, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'inactive', note: '' }
@@ -530,6 +612,7 @@ export let mockStudents: Student[] = [
     id: 's12', name: 'Dev Nair', phone: '9876543222', alternatePhone: '', guardianName: 'Sanjay Nair',
     membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2025-06-01', membershipStartDate: '2026-04-01',
     nextDueDate: '2026-05-01', status: 'dropout', pendingAmount: 1500, internalNotes: 'Has outstanding dues before leaving',
+    dateOfBirth: '2015-10-08', enrollmentSource: 'referral', dropoutReason: 'Health reasons', dropoutDate: '2026-08-10',
     paymentHistory: [
       { id: 'p24', date: '2025-06-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'inactive', note: '' },
       { id: 'p25', date: '2026-04-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'deleted', note: '' }
@@ -785,3 +868,26 @@ export let mockCustomExpenseCategories: string[] = []
     })
   }
 })()
+
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed'
+
+export interface MessageLog {
+  id: string
+  templateId: string       // matches TEMPLATE_REGISTRY id
+  sentAt: string           // ISO datetime string
+  recipientCount: number
+  status: MessageStatus
+  triggeredBy: 'manual' | 'auto'
+  note?: string            // e.g. "Dussehra holiday", "Morning Batch"
+}
+
+export let mockMessageLogs: MessageLog[] = [
+  { id: 'ml-1', templateId: 'fee-reminder', sentAt: '2023-10-01T09:00:00Z', recipientCount: 12, status: 'read', triggeredBy: 'auto', note: 'Monthly reminders' },
+  { id: 'ml-2', templateId: 'fee-reminder', sentAt: '2023-09-01T09:00:00Z', recipientCount: 15, status: 'delivered', triggeredBy: 'auto', note: 'Monthly reminders' },
+  { id: 'ml-3', templateId: 'declare-holiday', sentAt: '2023-10-23T10:00:00Z', recipientCount: 145, status: 'read', triggeredBy: 'manual', note: 'Dussehra Holiday' },
+  { id: 'ml-4', templateId: 'class-cancellation', sentAt: '2023-11-05T16:00:00Z', recipientCount: 22, status: 'sent', triggeredBy: 'manual', note: 'Morning Batch - Coach ill' },
+  { id: 'ml-5', templateId: 'fee-reminder', sentAt: '2023-11-01T09:00:00Z', recipientCount: 8, status: 'read', triggeredBy: 'auto', note: 'Monthly reminders' },
+  { id: 'ml-6', templateId: 'class-cancellation', sentAt: '2023-12-10T08:00:00Z', recipientCount: 18, status: 'delivered', triggeredBy: 'manual', note: 'Evening Batch - Court Maintenance' },
+]
+
+

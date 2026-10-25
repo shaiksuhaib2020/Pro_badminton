@@ -190,21 +190,7 @@ export default function AcademySection({ onSettingsChange }: { onSettingsChange?
             </label>
           </div>
           
-          <div className="bg-so-surface/50 border border-so-border rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-bold text-so-text">Multi-Branch</p>
-              <p className="text-xs text-so-muted mt-0.5">Manage multiple branch locations from one account.<br/>When enabled, branch management appears in Settings and a branch switcher becomes available across the app.</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={mockSettings.multiBranchEnabled}
-                onChange={handleToggleMultiBranch}
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-so-emerald relative"></div>
-            </label>
-          </div>
+
         </div>
       </div>
     </div>

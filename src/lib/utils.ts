@@ -72,3 +72,15 @@ export function getFirstDayOfMonthIST(): string {
   const istDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
   return `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-01`
 }
+
+import { parseISO } from 'date-fns'
+
+export const calcAge = (dob: string): number => {
+  if (!dob) return 0;
+  const birth = parseISO(dob)
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const m = today.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+  return age
+}

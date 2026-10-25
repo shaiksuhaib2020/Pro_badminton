@@ -19,13 +19,18 @@ export default function EditStudentModal({
   const [phone, setPhone] = useState(student.phone)
   const [guardianName, setGuardianName] = useState(student.guardianName ?? '')
   const [alternatePhone, setAlternatePhone] = useState(student.alternatePhone ?? '')
+  const [address, setAddress] = useState(student.address ?? '')
+  const [email, setEmail] = useState(student.email ?? '')
+  const [dateOfBirth, setDateOfBirth] = useState(student.dateOfBirth ?? '')
   const [internalNotes, setInternalNotes] = useState(student.internalNotes ?? '')
 
   // Membership
   const [membershipTypeId, setMembershipTypeId] = useState(student.membershipTypeId)
   const [selectedBatch, setSelectedBatch] = useState(student.currentBatch)
   const [fees, setFees] = useState<number>(student.fees)
+  const [startDate, setStartDate] = useState(student.startDate ?? '')
   const [membershipStartDate, setMembershipStartDate] = useState(student.membershipStartDate)
+  const [enrollmentSource, setEnrollmentSource] = useState<Student['enrollmentSource'] | ''>(student.enrollmentSource ?? '')
 
   // Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -88,12 +93,17 @@ export default function EditStudentModal({
       phone: phone.trim(),
       guardianName: guardianName.trim() || undefined,
       alternatePhone: alternatePhone.trim() || undefined,
+      address: address.trim() || undefined,
+      email: email.trim() || undefined,
+      dateOfBirth: dateOfBirth || undefined,
       internalNotes: internalNotes.trim() || undefined,
       membershipTypeId,
       currentBatch: selectedBatch,
       fees,
+      startDate: startDate.trim() || student.startDate,
       membershipStartDate,
       nextDueDate: computedNextDue,
+      enrollmentSource: enrollmentSource || undefined,
       status: computedStatus(),
     })
 
@@ -177,6 +187,47 @@ export default function EditStudentModal({
                   className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text placeholder:text-so-muted focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
                 />
               </div>
+
+              {/* Date of Birth */}
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  value={dateOfBirth}
+                  onChange={e => setDateOfBirth(e.target.value)}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="e.g. student@example.com"
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text placeholder:text-so-muted focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
+                />
+              </div>
+
+              {/* Address */}
+              <div className="col-span-2">
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={e => setAddress(e.target.value)}
+                  placeholder="Residential address"
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text placeholder:text-so-muted focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
+                />
+              </div>
             </div>
           </div>
 
@@ -245,6 +296,37 @@ export default function EditStudentModal({
                 }`}>
                   {format(parseISO(computedNextDue), 'dd MMM yyyy')}
                 </p>
+              </div>
+
+              {/* Joining Date / Date of Admission */}
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Joining Date / Date of Admission
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
+                />
+              </div>
+
+              {/* Source */}
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
+                  Source
+                </label>
+                <select
+                  value={enrollmentSource}
+                  onChange={e => setEnrollmentSource(e.target.value as Student['enrollmentSource'] | '')}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent capitalize"
+                >
+                  <option value="">Select source (optional)</option>
+                  <option value="walk-in">Walk-in</option>
+                  <option value="referral">Referral</option>
+                  <option value="social-media">Social Media</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
             </div>
 

@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { X, CheckCircle } from 'lucide-react'
-import { mockCourtPlans, CourtMember } from '@/lib/mock-data'
+import { mockCourtPlans, CourtMembership, getMembershipDisplayLabel } from '@/lib/mock-data'
 import { format, addMonths, parseISO } from 'date-fns'
 
 interface Props {
-  member: CourtMember
+  membership: CourtMembership
   onClose: () => void
   onSuccess: () => void
 }
 
-export default function CollectCourtPaymentModal({ member, onClose, onSuccess }: Props) {
-  const plan = mockCourtPlans.find(p => p.id === member.planId)
-  const defaultAmount = plan?.price || 0
+export default function CollectCourtPaymentModal({ membership, onClose, onSuccess }: Props) {
+  const label = getMembershipDisplayLabel(membership)
+
+  const plan = mockCourtPlans.find(p => p.id === membership.planId)
+  const defaultAmount = membership.pendingAmount > 0 ? membership.pendingAmount : (plan?.price || 0)
   
   const [amount, setAmount] = useState<number | ''>(defaultAmount)
   const [paymentMethod, setPaymentMethod] = useState<'cash'|'upi'|'card'|'other'>('upi')
@@ -20,21 +22,16 @@ export default function CollectCourtPaymentModal({ member, onClose, onSuccess }:
   const handleConfirm = () => {
     if (!amount) return
     
-    member.amountPaid += Number(amount)
+    membership.amountPaid += Number(amount)
+    membership.pendingAmount = Math.max(0, membership.pendingAmount - Number(amount))
     
-    const isRenew = member.status === 'expired'
-    member.status = 'active'
-    
-    if (plan?.planType === 'monthly' && plan.durationMonths && member.nextDueDate) {
-      member.nextDueDate = format(addMonths(parseISO(member.nextDueDate), plan.durationMonths), 'yyyy-MM-dd')
-    }
-
-    member.paymentHistory.push({
+    membership.paymentHistory.push({
       id: crypto.randomUUID(),
+      membershipId: membership.id,
       date: format(new Date(), 'yyyy-MM-dd'),
       amount: Number(amount),
       paymentMethod,
-      entryType: isRenew ? 'renewal' : 'new',
+      entryType: 'new',
       status: 'active'
     })
     
@@ -55,7 +52,7 @@ export default function CollectCourtPaymentModal({ member, onClose, onSuccess }:
           <div className="p-6 space-y-4">
             <div>
               <p className="text-xs text-so-muted uppercase font-semibold">Member</p>
-              <p className="text-sm font-medium text-so-text">{member.name} • {plan?.name}</p>
+              <p className="text-sm font-medium text-so-text">{label} • {plan?.name}</p>
             </div>
             
             <div>

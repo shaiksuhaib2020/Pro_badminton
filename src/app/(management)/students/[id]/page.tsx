@@ -4,10 +4,11 @@ import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { mockStudents, mockSettings, Student, mockAttendance, mockBatches } from '@/lib/mock-data'
 import { isWithinInterval, parseISO, format, startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay, getDay, getDaysInMonth } from 'date-fns'
+import { calcAge, formatDate } from '@/lib/utils'
 import {
   ArrowLeft, Phone, User, Calendar, CreditCard, Shield, IndianRupee, Users,
   Receipt, CheckCircle, RefreshCw, SlidersHorizontal, X, Wallet, Trash2,
-  AlertCircle, Clock, ChevronLeft, ChevronRight, Pencil
+  AlertCircle, Clock, ChevronLeft, ChevronRight, Pencil, MapPin, Mail, Compass
 } from 'lucide-react'
 import RenewModal from '@/components/coaching/RenewModal'
 import CollectRemainingModal from '@/components/students/CollectRemainingModal'
@@ -17,7 +18,7 @@ type ProfileTab = 'details' | 'transactions' | 'attendance'
 type TxTab = 'recent' | 'paid' | 'pending' | 'partial'
 type FilterRange = 'currentMonth' | 'lastMonth' | 'custom'
 
-const InfoRow = ({ icon, label, value }: { icon: React.ReactNode, label: string, value: string }) => (
+const InfoRow = ({ icon, label, value }: { icon: React.ReactNode, label: string, value: React.ReactNode }) => (
   <div className="flex items-start gap-3">
     <span className="text-so-muted mt-0.5 w-4 h-4 flex-shrink-0">{icon}</span>
     <div>
@@ -250,7 +251,7 @@ export default function StudentProfilePage() {
                 : 'border-transparent text-so-muted hover:text-so-text'
             }`}
           >
-            {tab === 'details' ? 'Member Details' : tab === 'transactions' ? 'Transaction Details' : 'Attendance'}
+            {tab === 'details' ? 'Details' : tab === 'transactions' ? 'Transaction Details' : 'Attendance'}
           </button>
         ))}
       </div>
@@ -261,8 +262,22 @@ export default function StudentProfilePage() {
           <div className="grid grid-cols-2 gap-x-12 gap-y-4">
             <InfoRow icon={<User className="w-4 h-4" />} label="Name" value={student.name} />
             <InfoRow icon={<Phone className="w-4 h-4" />} label="Mobile Number" value={student.phone} />
+            {student.dateOfBirth && (
+              <InfoRow 
+                icon={<Calendar className="w-4 h-4" />} 
+                label="Date of Birth" 
+                value={
+                  <span className="flex items-center gap-1.5">
+                    {formatDate(student.dateOfBirth)}
+                    <span className="text-xs text-so-muted font-normal">(Age: {calcAge(student.dateOfBirth)})</span>
+                  </span>
+                }
+              />
+            )}
             <InfoRow icon={<Phone className="w-4 h-4" />} label="Alternate Number" value={student.alternatePhone || '-'} />
             <InfoRow icon={<Shield className="w-4 h-4" />} label="Guardian" value={student.guardianName || '-'} />
+            <InfoRow icon={<Mail className="w-4 h-4" />} label="Email" value={student.email || '-'} />
+            <InfoRow icon={<MapPin className="w-4 h-4" />} label="Address" value={student.address || '-'} />
           </div>
 
           <div className="border-t border-so-border my-6"></div>
@@ -275,6 +290,11 @@ export default function StudentProfilePage() {
             <InfoRow icon={<Calendar className="w-4 h-4" />} label="Next Due" value={formatDateLabel(student.nextDueDate)} />
             <InfoRow icon={<Users className="w-4 h-4" />} label="Current Batch" value={`${student.currentBatch} Batch`} />
             <InfoRow icon={<CreditCard className="w-4 h-4" />} label="Membership" value={getMembershipName(student.membershipTypeId)} />
+            <InfoRow 
+              icon={<Compass className="w-4 h-4" />} 
+              label="Source" 
+              value={<span className="capitalize">{student.enrollmentSource ? student.enrollmentSource.replace('-', ' ') : '-'}</span>} 
+            />
           </div>
 
           {student.internalNotes && (

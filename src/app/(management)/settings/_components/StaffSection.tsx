@@ -229,7 +229,7 @@ export default function StaffSection() {
             </div>
           </div>
 
-          <div>
+          <div className="hidden">
             <label className="block text-[10px] font-bold uppercase text-so-muted mb-1.5">Branch Assignment</label>
             {inviteRole === 'owner' ? (
               <p className="text-xs text-so-accent font-semibold bg-so-accent/10 px-3 py-1.5 rounded-lg border border-so-accent/20 w-fit">
@@ -281,7 +281,7 @@ export default function StaffSection() {
               <tr className="bg-so-surface border-b border-so-border text-so-muted font-bold uppercase">
                 <th className="px-4 py-3">Staff Member</th>
                 <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Branches</th>
+                <th className="px-4 py-3 hidden">Branches</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -307,7 +307,7 @@ export default function StaffSection() {
 
                     <td className="px-4 py-3 whitespace-nowrap">{getRoleBadge(staff.role)}</td>
 
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 hidden">
                       {isEditingBranches ? (
                         <div className="space-y-2 bg-so-surface p-2 rounded-lg border border-so-border">
                           <div className="flex flex-wrap gap-2">
@@ -376,7 +376,7 @@ export default function StaffSection() {
                             <div className="absolute right-0 mt-1 w-44 bg-white border border-so-border rounded-xl shadow-lg z-20 py-1 text-left animate-in fade-in slide-in-from-top-1">
                               <button
                                 onClick={() => handleStartEditBranches(staff)}
-                                className="w-full px-3 py-1.5 text-xs text-so-text hover:bg-so-surface flex items-center gap-2"
+                                className="w-full px-3 py-1.5 text-xs text-so-text hover:bg-so-surface flex items-center gap-2 hidden"
                               >
                                 Edit Branch Access
                               </button>

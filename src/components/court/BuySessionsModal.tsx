@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { mockCourtPlans, CourtMember } from '@/lib/mock-data'
+import { mockCourtPlans, CourtMembership, getMembershipDisplayLabel } from '@/lib/mock-data'
 import { format } from 'date-fns'
 
 interface Props {
-  member: CourtMember
+  membership: CourtMembership
   onClose: () => void
   onSuccess: () => void
 }
 
-export default function BuySessionsModal({ member, onClose, onSuccess }: Props) {
+export default function BuySessionsModal({ membership, onClose, onSuccess }: Props) {
+  const label = getMembershipDisplayLabel(membership)
+
   const sessionPlans = mockCourtPlans.filter(p => p.planType === 'sessions')
   const [selectedPlanId, setSelectedPlanId] = useState<string>(sessionPlans[0]?.id || '')
   
@@ -30,14 +32,15 @@ export default function BuySessionsModal({ member, onClose, onSuccess }: Props) 
   const handleConfirm = () => {
     if (!amount || !selectedPlan || !selectedPlan.totalSessions) return
     
-    member.amountPaid += Number(amount)
-    member.remainingSessions = selectedPlan.totalSessions
-    member.totalSessions = selectedPlan.totalSessions
-    member.planId = selectedPlan.id
-    member.status = 'active'
+    membership.amountPaid += Number(amount)
+    membership.remainingSessions = selectedPlan.totalSessions
+    membership.totalSessions = selectedPlan.totalSessions
+    membership.planId = selectedPlan.id
+    membership.status = 'active'
 
-    member.paymentHistory.push({
+    membership.paymentHistory.push({
       id: crypto.randomUUID(),
+        membershipId: membership.id,
       date: format(new Date(), 'yyyy-MM-dd'),
       amount: Number(amount),
       paymentMethod,
@@ -62,7 +65,7 @@ export default function BuySessionsModal({ member, onClose, onSuccess }: Props) 
           <div className="p-6 space-y-4">
             <div>
               <p className="text-xs text-so-muted uppercase font-semibold">Member</p>
-              <p className="text-sm font-medium text-so-text">{member.name}</p>
+              <p className="text-sm font-medium text-so-text">{label}</p>
             </div>
 
             <div>
