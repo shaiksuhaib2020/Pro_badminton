@@ -1,6 +1,6 @@
 # EzyFee — Structure Reference
 
-> **Source:** CODEBASE_AUDIT.md v1.0 (01 Oct 2026) + project memory reconciliation
+> **Source:** CODEBASE_AUDIT.md v1.0 (01 Oct 2026) + V1_changes_oct1.md (01 Oct 2026) + project memory reconciliation
 > **Purpose:** Carry structural knowledge — files, routes, components, exports, data sources, dependencies — across context windows. Architectural decisions, business rules, and data-model invariants live in **Architecture.md**.
 > **Update rule:** Edit this file whenever a file is added, renamed, or deleted; whenever a route is added or changed; whenever a component's props change; whenever a new dependency is added.
 
@@ -20,21 +20,21 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 ├── postcss.config.mjs                    # Tailwind v4 PostCSS plugin
 ├── package.json
 ├── package-lock.json
-├── pro_logo.png                          # ⚠ 1.5MB — should be in /public/, fails in prod
+├── pro_logo.png                          # ⚠ Should be in /public/, fails in prod
 ├── scratch.ts                            # ⚠ Delete before production
 ├── scratch.txt                           # ⚠ Delete before production (115 KB)
 ├── scratch_accounts.tsx                  # ⚠ Delete before production (64 KB)
 │
-├── public/                               # Static assets (Next.js serves from here)
+├── public/                               # Static assets
 │   ├── file.svg
 │   ├── globe.svg
 │   ├── next.svg
 │   ├── vercel.svg
-│   └── window.svg                        # All default Next.js placeholders
+│   └── window.svg
 │
 ├── supabase/
 │   ├── schema.sql                        # Mirror of database_schema.sql
-│   └── SCHEMA_NOTES.md                   # Environment and migration notes
+│   └── SCHEMA_NOTES.md
 │
 ├── prompts/                              # Excluded from audit
 │
@@ -47,75 +47,96 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
     │   ├── page.tsx                      # ⚠ Unreachable Next.js boilerplate — safe to delete
     │   ├── favicon.ico
     │   │
-    │   ├── (auth)/                       # Auth group — no Sidebar or TopBar
+    │   ├── (auth)/
     │   │   └── login/
-    │   │       ├── layout.tsx            # Passthrough layout (renders children only) [SERVER]
+    │   │       ├── layout.tsx            # Passthrough layout [SERVER]
     │   │       └── page.tsx              # Email/password login form [CLIENT]
     │   │
-    │   ├── (management)/                 # Protected route group
+    │   ├── (management)/
     │   │   ├── layout.tsx                # SSR auth guard + Sidebar + TopBar shell [SERVER]
     │   │   │
     │   │   ├── dashboard/
-    │   │   │   ├── page.tsx              # KPI cards, batch revenue, payment modes [CLIENT]
-    │   │   │   ├── loading.tsx           # Skeleton loader
-    │   │   │   └── error.tsx             # Error boundary
+    │   │   │   ├── page.tsx              # KPI cards, batch revenue, payment modes [CLIENT — still mock]
+    │   │   │   ├── loading.tsx
+    │   │   │   └── error.tsx
     │   │   │
-    │   │   ├── enquiries/                # ⏳ PLANNED — not yet implemented
-    │   │   │   └── page.tsx              # Admissions pipeline (New→Contacted→Trial→Enrolled/Lost)
+    │   │   ├── enquiries/                # ✅ Supabase-wired
+    │   │   │   ├── page.tsx              # Async Server Component — fetches getEnquiries() [SERVER]
+    │   │   │   ├── loading.tsx
+    │   │   │   ├── actions.ts            # createEnquiry, updateEnquiry, advanceEnquiryStatus, deleteEnquiry
+    │   │   │   └── _components/
+    │   │   │       └── EnquiryList.tsx   # Search, filter, popover actions, delete confirm strip [CLIENT]
     │   │   │
-    │   │   ├── students/
-    │   │   │   ├── page.tsx              # Members: coaching + court segment toggle [CLIENT]
+    │   │   ├── students/                 # ✅ Supabase-wired
+    │   │   │   ├── page.tsx              # Async Server Component — fetches getStudents() [SERVER]
     │   │   │   ├── loading.tsx
     │   │   │   ├── error.tsx
+    │   │   │   ├── actions.ts            # createStudent, renewStudent, dropoutStudent, reEnrollStudent,
+    │   │   │   │                         #   deactivateStudent, activateStudent, collectRemaining,
+    │   │   │   │                         #   voidPayment, updateStudent, deleteStudentPermanently
+    │   │   │   ├── _components/
+    │   │   │   │   └── StudentList.tsx   # Search, filters, tabs, action menus, modals [CLIENT]
     │   │   │   └── [id]/
-    │   │   │       └── page.tsx          # Student profile — details, transactions, attendance [CLIENT]
+    │   │   │       ├── page.tsx          # Async Server Component — fetches getStudentById(id)
+    │   │   │       │                     #   + getAttendanceByStudent() [SERVER]
+    │   │   │       └── _components/
+    │   │   │           └── StudentProfileView.tsx  # Details, Transactions (void), Attendance tabs [CLIENT]
     │   │   │
-    │   │   ├── batches/
-    │   │   │   ├── page.tsx              # Batch cards list [CLIENT]
+    │   │   ├── batches/                  # ✅ Supabase-wired
+    │   │   │   ├── page.tsx              # Async Server Component — fetches getBatches() + getStudents() [SERVER]
     │   │   │   ├── loading.tsx
+    │   │   │   ├── actions.ts            # createBatch, updateBatch, deleteBatch, getBatchesAction
+    │   │   │   ├── _components/
+    │   │   │   │   └── BatchesView.tsx   # Batch cards, add/edit/delete UI [CLIENT]
     │   │   │   └── [id]/
-    │   │   │       ├── page.tsx          # Batch detail — attendance, students, transactions [CLIENT]
-    │   │   │       └── loading.tsx
+    │   │   │       ├── page.tsx          # Async Server Component — fetches batch + students + attendance
+    │   │   │       │                     #   concurrently via Promise.all [SERVER]
+    │   │   │       ├── loading.tsx
+    │   │   │       ├── actions.ts        # saveAttendance (upsert with onConflict: batch_id,date)
+    │   │   │       └── _components/
+    │   │   │           └── BatchDetail.tsx  # Attendance marking, date nav, tabs, search [CLIENT]
     │   │   │
     │   │   ├── court-members/
     │   │   │   └── [id]/
-    │   │   │       ├── page.tsx          # Court member profile — details, transactions, check-ins [CLIENT]
+    │   │   │       ├── page.tsx          # Court member profile — details, transactions, check-ins [CLIENT — mock]
     │   │   │       └── loading.tsx
     │   │   │
     │   │   ├── transactions/
-    │   │   │   ├── page.tsx              # Fee ledger — coaching + court segments [CLIENT]
+    │   │   │   ├── page.tsx              # Fee ledger — coaching + court segments [CLIENT — mock]
     │   │   │   ├── loading.tsx
     │   │   │   └── error.tsx
     │   │   │
     │   │   ├── accounts/
-    │   │   │   ├── page.tsx              # Income + expense tracker [CLIENT]
+    │   │   │   ├── page.tsx              # Income + expense tracker [CLIENT — mock]
     │   │   │   └── loading.tsx
     │   │   │
     │   │   ├── inventory/
-    │   │   │   ├── page.tsx              # Product catalog with stock tracking [CLIENT]
+    │   │   │   ├── page.tsx              # Product catalog with stock tracking [CLIENT — mock]
     │   │   │   └── loading.tsx
     │   │   │
     │   │   ├── reports/
-    │   │   │   ├── page.tsx              # Analytics hub — fees, students, attendance [CLIENT]
+    │   │   │   ├── page.tsx              # Analytics hub — fees, students, attendance [CLIENT — mock]
     │   │   │   └── _components/
-    │   │   │       ├── FeesSegment.tsx       # Revenue chart, paid/pending donut, batch table
+    │   │   │       ├── FeesSegment.tsx       # Revenue chart (month-scoped), paid/pending donut,
+    │   │   │       │                         #   Batch Revenue + Payment Mode combined card with navigator
     │   │   │       ├── StudentsSegment.tsx   # Growth chart, age distribution, dropouts
     │   │   │       └── AttendanceSegment.tsx # Batch rates, present/absent donut, overview table
     │   │   │
     │   │   ├── communications/
-    │   │   │   ├── page.tsx              # WhatsApp template gallery + detail shell [CLIENT]
+    │   │   │   ├── page.tsx              # WhatsApp template gallery + detail shell [CLIENT — mock]
     │   │   │   └── loading.tsx
     │   │   │
-    │   │   └── settings/
-    │   │       ├── page.tsx              # Settings hub [CLIENT]
+    │   │   └── settings/                 # ✅ Membership Types Supabase-wired; rest still mock
+    │   │       ├── page.tsx              # Async Server Component — fetches getMembershipTypes() [SERVER]
     │   │       ├── loading.tsx
     │   │       ├── error.tsx
+    │   │       ├── actions.ts            # createMembershipType, updateMembershipType, deleteMembershipType
     │   │       └── _components/
     │   │           ├── AcademySection.tsx      # Name, phone, address, feature toggles
     │   │           ├── BranchesSection.tsx     # Multi-branch CRUD
     │   │           ├── StaffSection.tsx        # Staff CRUD + role assignment
     │   │           ├── PermissionsMatrix.tsx   # Read-only role permissions table
-    │   │           ├── MembershipSection.tsx   # Coaching plan CRUD
+    │   │           ├── MembershipSection.tsx   # ✅ Wired to server actions; accepts initialMembershipTypes prop
     │   │           └── EventsSection.tsx       # Events CRUD
     │   │
     │   └── api/
@@ -133,15 +154,21 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
     │   │   ├── StatusBadge.tsx           # Colored status pill
     │   │   └── ConfirmDialog.tsx         # ⚠ Empty — renders <div /> only
     │   │
+    │   ├── enquiries/                    # ✅ Created
+    │   │   ├── AddEnquiryModal.tsx       # Create new enquiry; calls createEnquiry action
+    │   │   └── EditEnquiryModal.tsx      # Edit + status advance; calls updateEnquiry / advanceEnquiryStatus
+    │   │
     │   ├── students/
-    │   │   ├── AddStudentModal.tsx
-    │   │   ├── EditStudentModal.tsx
-    │   │   ├── ReEnrollModal.tsx
-    │   │   ├── DropoutConfirmModal.tsx
-    │   │   └── CollectRemainingModal.tsx
+    │   │   ├── AddStudentModal.tsx       # Two-tab sidebar (Personal Details + Coaching Details)
+    │   │   │                             #   New fields: address, email, joiningDate
+    │   │   │                             #   Dynamic batch dropdown from getBatchesAction()
+    │   │   ├── EditStudentModal.tsx      # Edits address, email, DOB, startDate (Admission Date), source
+    │   │   ├── ReEnrollModal.tsx         # Dynamic batches; wired to reEnrollStudent action
+    │   │   ├── DropoutConfirmModal.tsx   # Wired to dropoutStudent action
+    │   │   └── CollectRemainingModal.tsx # Wired to collectRemaining action
     │   │
     │   ├── coaching/
-    │   │   └── RenewModal.tsx
+    │   │   └── RenewModal.tsx            # Dynamic batches; wired to renewStudent action
     │   │
     │   ├── court/
     │   │   ├── AddMemberModal.tsx
@@ -163,12 +190,19 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
     │       └── templates/               # ⚠ Empty directory
     │
     └── lib/
-        ├── mock-data.ts                 # All types + seed data + mutable state (TEMPORARY)
-        ├── utils.ts                     # Pure utility functions
+        ├── auth-context.ts              # ✅ getServerSession(): { user, academyId, role } — server-only
+        ├── mock-data.ts                 # Types + seed data; preserved for un-migrated consumers
+        ├── utils.ts                     # Pure utilities + toAppEnum / toDbEnum enum mappers
         └── supabase/
             ├── client.ts               # Supabase browser client
-            ├── server.ts               # Supabase server client + cookie handler
-            └── database.types.ts       # Auto-generated Supabase DB types (not yet used by app)
+            ├── server.ts               # Supabase server client — strongly typed createServerClient<Database>
+            └── database.types.ts       # Auto-generated Supabase DB types
+        └── queries/                    # ✅ Server-only read functions
+            ├── settings.ts             # getMembershipTypes()
+            ├── students.ts             # getStudents(), getStudentById(), getStudentsByBatch()
+            ├── batches.ts              # getBatches(), getBatchById()
+            ├── attendance.ts           # getAttendanceByBatch(), getAttendanceByStudent()
+            └── enquiries.ts            # getEnquiries()
 ```
 
 ---
@@ -180,25 +214,27 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 | `/` | — | root | — | — | — | — |
 | `/login` | `(auth)` | `login/layout.tsx` (passthrough) | CLIENT | ❌ | — | — |
 | `/dashboard` | `(management)` | `(management)/layout.tsx` (SSR, auth guard) | CLIENT | ✅ | ✅ | ✅ |
-| `/enquiries` | `(management)` | same | CLIENT | ✅ | ⏳ | ⏳ |
+| `/enquiries` | `(management)` | same | SERVER → CLIENT | ✅ | ✅ | — |
 | `/reports` | `(management)` | same | CLIENT | ✅ | — | — |
-| `/students` | `(management)` | same | CLIENT | ✅ | ✅ | ✅ |
-| `/students/[id]` | `(management)` | same | CLIENT | ✅ | — | — |
-| `/batches` | `(management)` | same | CLIENT | ✅ | ✅ | — |
-| `/batches/[id]` | `(management)` | same | CLIENT | ✅ | ✅ | — |
+| `/students` | `(management)` | same | SERVER → CLIENT | ✅ | ✅ | ✅ |
+| `/students/[id]` | `(management)` | same | SERVER → CLIENT | ✅ | — | — |
+| `/batches` | `(management)` | same | SERVER → CLIENT | ✅ | ✅ | — |
+| `/batches/[id]` | `(management)` | same | SERVER → CLIENT | ✅ | ✅ | — |
 | `/court-members/[id]` | `(management)` | same | CLIENT | ✅ | ✅ | — |
 | `/transactions` | `(management)` | same | CLIENT | ✅ | ✅ | ✅ |
 | `/inventory` | `(management)` | same | CLIENT | ✅ | ✅ | — |
 | `/accounts` | `(management)` | same | CLIENT | ✅ | ✅ | — |
 | `/communications` | `(management)` | same | CLIENT | ✅ | ✅ | — |
-| `/settings` | `(management)` | same | CLIENT | ✅ | ✅ | ✅ |
+| `/settings` | `(management)` | same | SERVER → CLIENT | ✅ | ✅ | ✅ |
+
+> **SERVER → CLIENT** means the page.tsx is an async Server Component that fetches data and passes it to a `'use client'` view component as props.
 
 ### Sidebar Navigation Items (in order)
 
 | # | Label | Route | Icon | Condition |
 |---|---|---|---|---|
 | 1 | Dashboard | `/dashboard` | `LayoutDashboard` | Always |
-| 2 | Enquiries | `/enquiries` | `UserSearch` (ti-user-search) | ⏳ Planned — between Dashboard and Members |
+| 2 | Enquiries | `/enquiries` | `UserSearch` | Always |
 | 3 | Members | `/students` | `Users` | Always |
 | 4 | Batches | `/batches` | `LayoutGrid` | Always |
 | 5 | Fee Transactions | `/transactions` | `Receipt` | Always |
@@ -238,21 +274,28 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 | `StatusBadge` | `components/ui/StatusBadge.tsx` | `status: string` | Renders colored pill — Available (green), Booked (blue), Blocked (red) |
 | `ConfirmDialog` | `components/ui/ConfirmDialog.tsx` | — | ⚠ Empty — renders `<div />`. Not implemented. |
 
+### Enquiry-Domain Modals
+
+| Component | File | Key Props | Behavior Summary |
+|---|---|---|---|
+| `AddEnquiryModal` | `components/enquiries/AddEnquiryModal.tsx` | `onClose, onSuccess` | Create new enquiry; calls `createEnquiry` server action; shows loading + error state. |
+| `EditEnquiryModal` | `components/enquiries/EditEnquiryModal.tsx` | `enquiry, onClose, onSuccess` | Edit name/phone/guardian/notes; status transition with trial date via `advanceEnquiryStatus`. |
+
 ### Student-Domain Modals
 
 | Component | File | Key Props | Behavior Summary |
 |---|---|---|---|
-| `AddStudentModal` | `components/students/AddStudentModal.tsx` | `onClose, onSuccess, defaultBatch?` | Enroll new student. Phone duplicate check. Discount + partial payment support. |
-| `EditStudentModal` | `components/students/EditStudentModal.tsx` | `student, onClose, onSave` | Edit phone, batch, notes, guardian. Does NOT edit `startDate`. |
-| `ReEnrollModal` | `components/students/ReEnrollModal.tsx` | `student, onClose, onConfirm` | Fresh membership — new type, batch, start date. Preserves payment history. |
-| `DropoutConfirmModal` | `components/students/DropoutConfirmModal.tsx` | `student, onClose, onConfirm` | Captures reason. Sets all active payments to `inactive`. |
-| `CollectRemainingModal` | `components/students/CollectRemainingModal.tsx` | `student, onClose, onConfirm` | Collects `pendingAmount`. Sets it to 0. |
+| `AddStudentModal` | `components/students/AddStudentModal.tsx` | `onClose, onSuccess, defaultBatch?` | Two-tab sidebar modal (Personal + Coaching). New fields: address, email, joiningDate. Dynamic batch dropdown. Calls `createStudent` action; surfaces `DUPLICATE_PHONE` error. |
+| `EditStudentModal` | `components/students/EditStudentModal.tsx` | `student, onClose, onSave` | Edits phone, batch, notes, guardian, address, email, DOB, startDate, source. Dynamic batch list. Calls `updateStudent` action. |
+| `ReEnrollModal` | `components/students/ReEnrollModal.tsx` | `student, onClose, onConfirm` | Fresh membership — new type, batch, start date. Dynamic batch dropdown. Calls `reEnrollStudent` action. |
+| `DropoutConfirmModal` | `components/students/DropoutConfirmModal.tsx` | `student, onClose, onConfirm` | Captures reason. Calls `dropoutStudent` action; sets all active payments to `inactive`. |
+| `CollectRemainingModal` | `components/students/CollectRemainingModal.tsx` | `student, onClose, onConfirm` | Collects `pendingAmount`. Calls `collectRemaining` action. |
 
 ### Coaching-Domain Modals
 
 | Component | File | Key Props | Behavior Summary |
 |---|---|---|---|
-| `RenewModal` | `components/coaching/RenewModal.tsx` | `student, isCollectingRemaining?, onClose, onConfirm` | Select periods. Chains `nextDueDate`. Partial payment + batch switch support. |
+| `RenewModal` | `components/coaching/RenewModal.tsx` | `student, isCollectingRemaining?, onClose, onConfirm` | Select periods. Chains `nextDueDate`. Partial payment + batch switch. Dynamic batch list. Calls `renewStudent` action. |
 
 ### Court-Domain Modals
 
@@ -281,26 +324,24 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 | `TemplateDetailShell` | `components/communications/TemplateDetailShell.tsx` | Detail view wrapper with back navigation. |
 | `TemplateHistory` | `components/communications/TemplateHistory.tsx` | Message send log — date, recipient count, status, trigger type. |
 
-### Per-Feature Sub-Components (`_components/`)
+### Per-Feature Client View Components (`_components/`)
 
 | Component | Route | Feature Summary |
 |---|---|---|
-| `FeesSegment` | `/reports` | Monthly revenue bar chart, paid/pending donut, payment mode donut, batch revenue table, outstanding students table |
+| `EnquiryList` | `/enquiries` | Search, status filter, sort, inline popovers, delete confirmation strip, action menus. Receives `enquiries` prop from Server page. |
+| `StudentList` | `/students` | Search, status filters, tabs, action menus, modal dialogs. Receives `students` prop from Server page. |
+| `StudentProfileView` | `/students/[id]` | Details tab (email, address, DOB, source), Transaction Details tab (void payment support), Attendance tab. Receives `student` + `attendance` props. |
+| `BatchesView` | `/batches` | Batch cards, create/edit/delete with duplicate name validation and deletion safety check. Receives `batches` + `students` props. |
+| `BatchDetail` | `/batches/[id]` | Attendance marking, date navigation, student toggles, search, tab controls. Calls `saveAttendance` action. Receives `batch` + `students` + `attendance` props. |
+| `FeesSegment` | `/reports` | Monthly revenue bar chart (dropdown: Last 3 / 6 months / Custom), paid/pending donut (batch filter dropdown), Batch Revenue + Payment Mode combined card with shared `← Month →` navigator. Percentage capped at 100%. |
 | `StudentsSegment` | `/reports` | Growth bar chart, enrollment trend line chart (⚠ hardcoded), age distribution bars, status donut, recent dropouts table |
 | `AttendanceSegment` | `/reports` | Batch attendance rate bars, present/absent donut, student overview table with threshold classification |
 | `AcademySection` | `/settings` | Academy name, phone, address; `courtMembershipEnabled` toggle; `multiBranchEnabled` toggle |
 | `BranchesSection` | `/settings` | Add/edit/deactivate branches — only visible when `multiBranchEnabled` |
 | `StaffSection` | `/settings` | Staff CRUD — name, role, branch assignment, status (active/invited/suspended) |
-| `PermissionsMatrix` | `/settings` | Read-only 11×5 role permissions table |
-| `MembershipSection` | `/settings` | Coaching membership plan CRUD — name, duration type, duration, price |
+| `PermissionsMatrix` | `/settings` | Read-only 12×5 role permissions table (includes Enquiries row) |
+| `MembershipSection` | `/settings` | ✅ Wired to server actions. Accepts `initialMembershipTypes` prop. Create/update/soft-delete coaching plans. |
 | `EventsSection` | `/settings` | Upcoming events CRUD — name, type, date, description |
-
-### Planned Components (not yet built)
-
-| Component | File (planned) | Purpose |
-|---|---|---|
-| `AddEnquiryModal` | `components/enquiries/AddEnquiryModal.tsx` | Add new enquiry to admissions pipeline |
-| Enquiry page | `app/(management)/enquiries/page.tsx` | Pipeline stages: New → Contacted → Trial scheduled → Trial done → Enrolled/Lost |
 
 ---
 
@@ -313,6 +354,12 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 | `src/app/layout.tsx` | Root layout — metadata, font import only |
 | `src/app/(auth)/login/layout.tsx` | Passthrough layout |
 | `src/app/(management)/layout.tsx` | Auth guard — `supabase.auth.getUser()` server-side |
+| `src/app/(management)/enquiries/page.tsx` | Fetches `getEnquiries()`; passes data to `EnquiryList` |
+| `src/app/(management)/students/page.tsx` | Fetches `getStudents()`; passes data to `StudentList` |
+| `src/app/(management)/students/[id]/page.tsx` | Fetches `getStudentById(id)` + `getAttendanceByStudent()`; passes to `StudentProfileView` |
+| `src/app/(management)/batches/page.tsx` | Fetches `getBatches()` + `getStudents()`; passes to `BatchesView` |
+| `src/app/(management)/batches/[id]/page.tsx` | Concurrent `Promise.all` — batch + students + attendance; passes to `BatchDetail` |
+| `src/app/(management)/settings/page.tsx` | Fetches `getMembershipTypes()`; passes `initialMembershipTypes` to `MembershipSection` |
 | `src/proxy.ts` | Middleware — not a React component |
 
 ### Client Components (`'use client'`)
@@ -321,35 +368,37 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 |---|---|
 | `app/(auth)/login/page.tsx` | `useState`, `signInWithPassword()` |
 | `app/(management)/dashboard/page.tsx` | `useState`, date filter, Recharts |
-| `app/(management)/students/page.tsx` | `useState`, router, modal management, Check In |
-| `app/(management)/students/[id]/page.tsx` | `useState`, attendance calendar, tab switching |
-| `app/(management)/batches/page.tsx` | `useState`, `router.push()` |
-| `app/(management)/batches/[id]/page.tsx` | `useState`, attendance marking, tabs |
+| `app/(management)/enquiries/_components/EnquiryList.tsx` | `useState`, router, modal management, delete confirm strip |
+| `app/(management)/students/_components/StudentList.tsx` | `useState`, router, modal management, action menus |
+| `app/(management)/students/[id]/_components/StudentProfileView.tsx` | `useState`, tab switching, void payment |
+| `app/(management)/batches/_components/BatchesView.tsx` | `useState`, router, CRUD modals |
+| `app/(management)/batches/[id]/_components/BatchDetail.tsx` | `useState`, attendance marking, date navigation, saveAttendance call |
 | `app/(management)/court-members/[id]/page.tsx` | `useState`, tabs, check-in history |
 | `app/(management)/transactions/page.tsx` | `useState`, bulk collect, date filter |
 | `app/(management)/accounts/page.tsx` | `useState`, date filter, CRUD |
 | `app/(management)/inventory/page.tsx` | `useState`, sort/filter, modals |
 | `app/(management)/reports/page.tsx` | `useState`, segment switching |
-| `app/(management)/reports/_components/FeesSegment.tsx` | `useState`, Recharts |
+| `app/(management)/reports/_components/FeesSegment.tsx` | `useState`, monthOffset navigator, Recharts |
 | `app/(management)/reports/_components/StudentsSegment.tsx` | `useState`, Recharts |
 | `app/(management)/reports/_components/AttendanceSegment.tsx` | `useState`, Recharts |
 | `app/(management)/communications/page.tsx` | `useState`, template selection |
-| `app/(management)/settings/page.tsx` | `useState`, section management |
 | `app/(management)/settings/_components/AcademySection.tsx` | `useState`, form handling |
 | `app/(management)/settings/_components/BranchesSection.tsx` | `useState`, form handling |
 | `app/(management)/settings/_components/StaffSection.tsx` | `useState`, form handling |
-| `app/(management)/settings/_components/PermissionsMatrix.tsx` | Read display — but co-located with client siblings |
-| `app/(management)/settings/_components/MembershipSection.tsx` | `useState`, form handling |
+| `app/(management)/settings/_components/PermissionsMatrix.tsx` | Read display — co-located with client siblings |
+| `app/(management)/settings/_components/MembershipSection.tsx` | `useState`, optimistic state, server actions |
 | `app/(management)/settings/_components/EventsSection.tsx` | `useState`, form handling |
 | `components/layout/Sidebar.tsx` | `usePathname()`, sign-out handler |
 | `components/layout/TopBar.tsx` | `useState` for branch switcher |
 | `components/layout/LiveClock.tsx` | `useEffect` + `setInterval` |
-| `components/students/AddStudentModal.tsx` | `useState`, form handling |
-| `components/students/EditStudentModal.tsx` | `useState`, form handling |
-| `components/students/ReEnrollModal.tsx` | `useState`, form handling |
-| `components/students/DropoutConfirmModal.tsx` | `useState`, form handling |
-| `components/students/CollectRemainingModal.tsx` | `useState`, form handling |
-| `components/coaching/RenewModal.tsx` | `useState`, form handling |
+| `components/enquiries/AddEnquiryModal.tsx` | `useState`, loading + error state, server action |
+| `components/enquiries/EditEnquiryModal.tsx` | `useState`, status transition, server action |
+| `components/students/AddStudentModal.tsx` | `useState`, two-tab form, server action |
+| `components/students/EditStudentModal.tsx` | `useState`, form handling, server action |
+| `components/students/ReEnrollModal.tsx` | `useState`, form handling, server action |
+| `components/students/DropoutConfirmModal.tsx` | `useState`, form handling, server action |
+| `components/students/CollectRemainingModal.tsx` | `useState`, form handling, server action |
+| `components/coaching/RenewModal.tsx` | `useState`, form handling, server action |
 | `components/court/AddMemberModal.tsx` | `useState`, form handling |
 | `components/court/EditCourtMemberModal.tsx` | `useState`, form handling |
 | `components/court/RenewCourtMemberModal.tsx` | `useState`, form handling |
@@ -379,21 +428,62 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 | `getDateDaysAgoIST` | `(daysAgo: number) → string` | `YYYY-MM-DD` in IST |
 | `getFirstDayOfMonthIST` | `() → string` | `YYYY-MM-01` |
 | `calcAge` | `(dob: string) → number` | Integer age |
+| `toAppEnum` | `(v: string) → string` | Converts `due_soon → due-soon`, `not_scheduled → not-scheduled`, `session_topup → session-topup` |
+| `toDbEnum` | `(v: string) → string` | Converts `due-soon → due_soon`, `not-scheduled → not_scheduled`, `session-topup → session_topup` |
 
-### `src/lib/mock-data.ts` — Mutable Data (Temporary)
+### `src/lib/auth-context.ts`
 
-| Export | Type | Seed Count |
+| Export | Signature | Returns |
 |---|---|---|
-| `mockStudents` | `let Student[]` | 12 (s1–s12, all statuses) |
-| `mockCourtMembers` | `let CourtMember[]` | 3 (monthly active, sessions-low, exhausted) |
-| `mockAttendance` | `let AttendanceRecord[]` | ~14 (7 days × 2 batches, 85% present) |
-| `mockExpenses` | `let AccountEntry[]` | 6 |
-| `mockIncomeEntries` | `let AccountEntry[]` | 4 |
-| `mockInventory` | `let InventoryItem[]` | 6 |
-| `mockSettings` | `let Settings` | Single settings object |
-| `mockBatches` | `let Batch[]` | 2 (Morning 6d/wk, Evening 4d/wk) |
-| `mockBranches` | `Branch[]` | 2 (Main Center, Kondapur Center) |
-| `mockMessageLogs` | `let MessageLog[]` | 6 |
+| `getServerSession` | `() → Promise<{ user, academyId, role }>` | Authenticated session + tenancy context. Redirects to `/login` if unauthenticated. Server-only. |
+
+### `src/lib/queries/settings.ts`
+
+| Export | Signature | Returns |
+|---|---|---|
+| `getMembershipTypes` | `() → Promise<MembershipType[]>` | Active membership types for authenticated academy, ordered by name |
+
+### `src/lib/queries/students.ts`
+
+| Export | Signature | Returns |
+|---|---|---|
+| `getStudents` | `() → Promise<Student[]>` | All students for authenticated academy (lightweight — no embedded payment history) |
+| `getStudentById` | `(id: string) → Promise<Student>` | One student with full `paymentHistory[]` joined from `student_payments` |
+| `getStudentsByBatch` | `(batchId: string) → Promise<Student[]>` | Active + due-soon students for a specific batch |
+
+### `src/lib/queries/batches.ts`
+
+| Export | Signature | Returns |
+|---|---|---|
+| `getBatches` | `() → Promise<Batch[]>` | All active batches for authenticated academy |
+| `getBatchById` | `(id: string) → Promise<Batch>` | One batch by UUID |
+
+### `src/lib/queries/attendance.ts`
+
+| Export | Signature | Returns |
+|---|---|---|
+| `getAttendanceByBatch` | `(batchId: string) → Promise<AttendanceRecord[]>` | All attendance records for a batch, ordered by date DESC |
+| `getAttendanceByStudent` | `(studentId: string, batchId: string) → Promise<AttendanceRecord[]>` | Attendance records for a student in a specific batch |
+
+### `src/lib/queries/enquiries.ts`
+
+| Export | Signature | Returns |
+|---|---|---|
+| `getEnquiries` | `() → Promise<Enquiry[]>` | All enquiries for authenticated academy, ordered by `created_at DESC` |
+
+### `src/lib/mock-data.ts` — Mutable Data (Preserved for un-migrated consumers)
+
+| Export | Type | Seed Count | Still used by |
+|---|---|---|---|
+| `mockStudents` | `let Student[]` | 12 | Dashboard, Reports, Transactions |
+| `mockCourtMembers` | `let CourtMember[]` | 3 | Court Members, Transactions |
+| `mockAttendance` | `let AttendanceRecord[]` | ~14 | Reports |
+| `mockExpenses` | `let AccountEntry[]` | 6 | Accounts |
+| `mockIncomeEntries` | `let AccountEntry[]` | 4 | Accounts |
+| `mockInventory` | `let InventoryItem[]` | 6 | Inventory |
+| `mockSettings` | `let Settings` | 1 | Dashboard, various |
+| `mockBatches` | `let Batch[]` | 2 | Dashboard, Reports |
+| `mockMessageLogs` | `let MessageLog[]` | 6 | Communications |
 
 ### `src/lib/mock-data.ts` — Constants (Stable)
 
@@ -403,17 +493,18 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 | `INCOME_CATEGORIES` | `string[]` | 9 |
 | `BUILTIN_INVENTORY_CATEGORIES` | `string[]` | 4 |
 | `UNIT_PRESETS` | `string[]` | 6 |
-| `PERMISSION_MATRIX` | `ModulePermission[]` | 11 rows |
+| `PERMISSION_MATRIX` | `ModulePermission[]` | 12 rows (Enquiries added) |
 
 ### `src/lib/mock-data.ts` — Types
 
 | Type | Key Fields |
 |---|---|
-| `Student` | id, name, phone, membershipTypeId, currentBatch, fees, startDate, membershipStartDate, nextDueDate, status, pendingAmount, paymentHistory |
+| `Student` | id, name, phone, alternatePhone, guardianName, membershipTypeId, currentBatch, fees, startDate, membershipStartDate, nextDueDate, status, dateOfBirth, **address?, email?**, enrollmentSource?, dropoutReason?, dropoutDate?, pendingAmount, internalNotes, paymentHistory |
 | `PaymentEntry` | id, date, amount, remainingAmount, paymentType, monthsCovered, paymentMethod, status, note |
 | `MembershipType` | id, name, durationType, duration, price |
 | `Batch` | id, name, branchId, days, fees?, description? |
-| `AttendanceRecord` | id (compound), batchId, date, records (map) |
+| `AttendanceRecord` | id, batchId, date, records (map) |
+| `Enquiry` | id, name, phone, guardianName, notes?, status, trialDate?, createdAt, **updatedAt?** |
 | `AccountEntry` | id, date, category, description, amount, paymentMethod, notes? |
 | `InventoryItem` | id, sku, name, category, description, unit, quantity, price, sellingPrice, icon? |
 | `CourtPlan` | id, name, planType, price, durationMonths?, totalSessions?, validityDays? |
@@ -438,67 +529,89 @@ Pro Badminton/                            ← repo root (product name: EzyFee)
 
 | Export | Signature | Notes |
 |---|---|---|
-| `createClient` | `() → SupabaseClient` | Server client — uses Next.js cookies(); use in middleware and server components |
+| `createClient` | `() → SupabaseClient<Database>` | Strongly typed server client — uses Next.js `cookies()`; use in middleware, server components, and all queries/actions |
 
 ### `src/lib/supabase/database.types.ts`
 
-Auto-generated Supabase types. Not yet consumed by application code — all app code uses hand-written types from `mock-data.ts`. These types will become the source of truth once Supabase is wired.
+Auto-generated Supabase types. Now consumed by `server.ts` (`createServerClient<Database>`). App code still uses hand-written types from `mock-data.ts` for non-migrated features.
 
 ---
 
 ## 15. Data Source Per Feature (Migration Tracker)
 
-`mock-data.ts` imports are the migration signal. When a feature moves to Supabase, its `mock-data.ts` imports are replaced with query functions and server actions.
+`lib/queries/` imports and `actions.ts` files are the migration signal. When all mock imports are removed from a feature, it is fully migrated.
 
-| Feature | Route | Data Source | `mock-data.ts` imports |
+| Feature | Route | Data Source | Mock imports remaining |
 |---|---|---|---|
 | **Authentication** | `/login` | ✅ **Supabase Auth** | None |
+| **Membership Types** | `/settings` (MembershipSection) | ✅ **Supabase** | `mockSettings.membershipTypes` preserved — used by other mock consumers |
+| **Students (coaching)** | `/students` | ✅ **Supabase** | `mockStudents` preserved — used by Dashboard, Reports, Transactions |
+| **Student profile** | `/students/[id]` | ✅ **Supabase** | `mockAttendance` replaced by Supabase fetch |
+| **Batches** | `/batches` | ✅ **Supabase** | `mockBatches` preserved — used by Dashboard, Reports |
+| **Batch detail + Attendance** | `/batches/[id]` | ✅ **Supabase** | None |
+| **Enquiries** | `/enquiries` | ✅ **Supabase** | `mockEnquiries` preserved in mock-data.ts but not imported by page |
 | Dashboard | `/dashboard` | ⚠ Mock | `mockStudents`, `mockSettings`, `mockAttendance`, `mockBatches` |
-| Students (coaching) | `/students` | ⚠ Mock | `mockStudents`, `mockSettings`, `mockBatches` |
-| Student profile | `/students/[id]` | ⚠ Mock | `mockStudents`, `mockAttendance`, `mockSettings` |
 | Court members | `/students` (court tab) | ⚠ Mock | `mockCourtMembers`, `mockSettings` |
 | Court member profile | `/court-members/[id]` | ⚠ Mock | `mockCourtMembers`, `mockSettings` |
-| Batches | `/batches` | ⚠ Mock | `mockBatches`, `mockStudents`, `mockSettings` |
-| Batch detail | `/batches/[id]` | ⚠ Mock | `mockBatches`, `mockStudents`, `mockAttendance`, `mockSettings` |
 | Fee transactions | `/transactions` | ⚠ Mock | `mockStudents`, `mockCourtMembers`, `mockSettings` |
 | Accounts | `/accounts` | ⚠ Mock | `mockExpenses`, `mockIncomeEntries` |
 | Inventory | `/inventory` | ⚠ Mock | `mockInventory` |
 | Reports | `/reports` | ⚠ Mock | `mockStudents`, `mockAttendance`, `mockBatches`, `mockSettings` |
 | Communications | `/communications` | ⚠ Mock + Stub | `mockMessageLogs`, `mockSettings`, `mockStudents` + `/api/whatsapp/send` stub |
-| Settings | `/settings` | ⚠ Mock | `mockSettings`, `mockBranches` |
-| Enquiries | `/enquiries` | ⏳ Planned | — |
+| Settings (other sections) | `/settings` | ⚠ Mock | `mockSettings`, `mockBranches` |
 
-**Migration status: 1 of 15 features on Supabase (Auth only).**
+**Migration status: 7 of 15 features on Supabase (Auth + 6 data features).**
 
 ---
 
 ## 16. Database Snapshot
 
-Full schema in `database_schema.sql` and `supabase/schema.sql`. **Not yet deployed or connected.**
+Full schema in `badmintonw_schema.sql`. Connected to Supabase for migrated features.
 
 ### Tables
 
 | Table | Key Columns | Notes |
 |---|---|---|
-| `students` | `id, academy_id, name, phone, alternate_phone, guardian_name, membership_type_id, batch_id, fees, start_date, membership_start_date, next_due_date, status, date_of_birth, enrollment_source, dropout_reason, dropout_date, pending_amount, internal_notes` | `student_status` enum column |
-| `student_payments` | `id, student_id, academy_id, date, amount, remaining_amount, payment_type, months_covered, payment_method, status, note` | Normalized from `Student.paymentHistory[]` |
-| `court_members` | `id, academy_id, name, phone, plan_id, plan_type, joining_date, membership_start_date, next_due_date, total_sessions, remaining_sessions, status, amount_paid, pending_amount, notes` | `court_member_status` enum column |
-| `court_payments` | `id, court_member_id, academy_id, date, amount, payment_method, entry_type, status, note` | Normalized from `CourtMember.paymentHistory[]` |
-| `court_check_ins` | `id, court_member_id, date, sessions_after` | Normalized from `CourtMember.checkInHistory[]` |
-| `attendance_records` | `id, batch_id, academy_id, date, records` | `records` is JSONB `{ studentId → 'present' \| 'absent' }` |
-| `account_entries` | `id, academy_id, date, category, description, amount, payment_method, entry_type, notes` | `entry_type: 'expense' \| 'income'` — unifies two mock arrays into one table |
+| `academies` | `id, name, phone, address, timezone, court_membership_enabled, multi_branch_enabled, …` | Feature toggles live here |
+| `branches` | `id, academy_id, name, address, is_active, is_primary` | Unique per academy |
+| `staff_members` | `id, academy_id, user_id, name, email, role, branch_id, status` | Unique `(user_id)` on active rows; linked to `auth.users` |
+| `membership_types` | `id, academy_id, name, duration_type, duration, price, is_active` | Soft-delete via `is_active = false` |
+| `batches` | `id, academy_id, branch_id, name, description, days[], fees, is_active` | Unique per branch (or per academy when no branch) |
+| `students` | `id, academy_id, name, phone, membership_type_id, batch_id, fees, start_date, membership_start_date, next_due_date, status, date_of_birth, dropout_reason, dropout_date, pending_amount, internal_notes` | `start_date` immutable (trigger). Status auto-derived (trigger). Soft-delete only. |
+| `student_payments` | `id, student_id, academy_id, date, amount, remaining_amount, payment_type, months_covered, payment_method, status, note` | `pending_amount` on students kept in sync by trigger |
+| `attendance_records` | `id, batch_id, academy_id, date, records` | JSONB `{ studentId → 'present' \| 'absent' }`. Upsert on `(batch_id, date)`. |
+| `account_entries` | `id, academy_id, date, entry_type, category, description, amount, payment_method, notes` | `entry_type: 'expense' \| 'income'` |
 | `inventory_items` | `id, academy_id, sku, name, category, description, unit, quantity, price, selling_price, icon` | — |
-| `settings` | `id, academy_id, court_membership_enabled, court_name, tenant_phone, tenant_address, multi_branch_enabled, fee_reminder_enabled, fee_ack_enabled, birthday_wish_enabled` | 1 row per academy |
+| `court_plans` | `id, academy_id, name, plan_type, price, duration_months?, total_sessions?, validity_days?, is_active` | — |
+| `court_memberships` | `id, academy_id, contact_name, contact_phone, people_count, plan_id, plan_type, start_date, end_date, total_sessions?, remaining_sessions?, status, amount_paid, pending_amount, address?, email?` | `joining_date` renamed to `start_date` in schema; `end_date` added |
+| `court_membership_people` | `id, membership_id, academy_id, name` | Row count enforced by trigger vs `people_count` |
+| `court_payment_entries` | `id, membership_id, academy_id, date, amount, payment_method, entry_type, status, sessions_added?, paying_now?, partial_due?` | `paying_now` and `partial_due` columns added for partial payment support |
+| `court_check_ins` | `id, membership_id, academy_id, checked_in_at, sessions_after?, people_checked_in` | Immutable. 5-second undo = DELETE last row. |
+| `enquiries` | `id, academy_id, name, phone, guardian_name, notes, status, trial_date` | `trial_date` NULL/NOT NULL enforced by DB constraint per status |
+| `events` | `id, academy_id, name, event_type, date, description` | — |
+| `message_logs` | `id, academy_id, template_id, sent_at, recipient_count, status, trigger_type` | Append-only |
 
-*(9 tables, 12+ indexes, enum types, triggers defined. Full DDL in `database_schema.sql`.)*
+### Key DB Invariants
 
-### Type Drift Note
+| Trigger | Table | What it does |
+|---|---|---|
+| `tr_students_compute_status` | `students` | BEFORE INSERT/UPDATE on `next_due_date` — auto-derives `active/due-soon/expired` in IST |
+| `tr_students_immutable_start_date` | `students` | BEFORE UPDATE on `start_date` — raises exception if changed |
+| `tr_sync_pending_amount_after_payment` | `student_payments` | AFTER INSERT/UPDATE/DELETE — recomputes `students.pending_amount` from `remaining_amount` sum. SECURITY DEFINER. |
+| `tr_payments_immutable_student_id` | `student_payments` | BEFORE UPDATE on `student_id` — raises exception if changed |
+| `tr_attendance_validate_records` | `attendance_records` | BEFORE INSERT/UPDATE on `records` — validates UUID keys and present/absent values |
+| `tr_court_people_enforce_count` | `court_membership_people` | BEFORE INSERT — enforces `people_count` cap |
+| Cross-academy FK triggers | Various | BEFORE INSERT/UPDATE — validates that FK references belong to the same `academy_id` |
 
-The hand-written types in `mock-data.ts` use embedded arrays (`Student.paymentHistory: PaymentEntry[]`). The SQL schema normalizes this into separate tables with foreign keys. When migrating, all components reading embedded arrays must be refactored to handle joined/relational data from `database.types.ts`.
+### Enum Mapping Reference
 
-### Migrations Applied
-
-**None.** Schema is defined in a single `.sql` file. Not yet run against any Supabase project. There is no migrations directory yet.
+| App value | DB value | Table / column |
+|---|---|---|
+| `due-soon` (student) | `due-soon` ← same | `students.status` — hyphen IS the DB label |
+| `due-soon` (court) | `due_soon` | `court_memberships.status` — use `toDbEnum()` |
+| `sessions-low` | `sessions_low` | `court_memberships.status` — use `toDbEnum()` |
+| `session-topup` | `session_topup` | `court_payment_entries.entry_type` — use `toDbEnum()` |
+| `not-scheduled` | `not_scheduled` | `enquiries.status` — use `toDbEnum()` |
 
 ---
 
@@ -546,16 +659,12 @@ The hand-written types in `mock-data.ts` use embedded arrays (`Student.paymentHi
 
 ## 18. Environment Variable Names
 
-All variables live in `.env.local` (git-ignored). Create `.env.example` with placeholder values for onboarding.
-
 | Variable | Used In | Purpose |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/client.ts`, `lib/supabase/server.ts` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `lib/supabase/server.ts` | Supabase anonymous (public) key |
 | `WHATSAPP_API_KEY` | `app/api/whatsapp/send/route.ts` | Meta WhatsApp Cloud API key (stub — not active) |
 | `WHATSAPP_PHONE_NUMBER_ID` | `app/api/whatsapp/send/route.ts` | WhatsApp sender phone number ID (stub — not active) |
-
-**Note:** `NEXT_PUBLIC_` prefix makes these readable on the client. The anon key is designed to be public. Never add secret server-only keys with the `NEXT_PUBLIC_` prefix.
 
 ---
 
@@ -607,16 +716,17 @@ Defined in `src/app/globals.css` via `@theme` (Tailwind v4):
 
 | Entity | Count | Status Distribution |
 |---|---|---|
-| Students | 12 | All statuses: active, due-soon, expired, inactive, dropout |
-| Court Members | 3 | active (monthly), sessions-low, exhausted |
-| Batches | 2 | Morning (6d/week ₹1,500), Evening (4d/week ₹1,500) |
+| Students | 12 (mock) | All statuses: active, due-soon, expired, inactive, dropout |
+| Court Members | 3 (mock) | active (monthly), sessions-low, exhausted |
+| Batches | 2 (mock) + live DB rows | Morning (6d/week ₹1,500), Evening (4d/week ₹1,500) |
 | Branches | 2 (mockBranches) + 3 (settings.branches) | Main Center, Kondapur, Indiranagar, Whitefield, Koramangala |
-| Staff | 3–4 | Owner, Coach, Accountant/Manager |
-| Membership Types | 3 | Monthly ₹1,500, Quarterly ₹4,000, Annual ₹14,000 |
-| Court Plans | 3 | Monthly Unlimited ₹3,000, Session Pack 10 ₹1,500, Session Pack 20 ₹2,500 |
-| Expenses | 6 | Shuttlecocks, utilities, court rent, equipment, coaching staff |
-| Income Entries | 4 | Shuttle sales, restringing, equipment sales |
-| Inventory Items | 6 | Yonex shuttles, racquets, shoes, grip tape, T-shirts |
-| Attendance Records | ~14 | 7 days × 2 batches, 85% present rate (auto-seeded via IIFE) |
-| Events | 3 | Tournament, sports meet, maintenance day |
-| Message Logs | 6 | Historical WhatsApp send records |
+| Staff | 3–4 (mock) | Owner, Coach, Accountant/Manager |
+| Membership Types | 3 (mock + DB) | Monthly ₹1,500, Quarterly ₹4,000, Annual ₹14,000 |
+| Court Plans | 3 (mock) | Monthly Unlimited ₹3,000, Session Pack 10 ₹1,500, Session Pack 20 ₹2,500 |
+| Expenses | 6 (mock) | Shuttlecocks, utilities, court rent, equipment, coaching staff |
+| Income Entries | 4 (mock) | Shuttle sales, restringing, equipment sales |
+| Inventory Items | 6 (mock) | Yonex shuttles, racquets, shoes, grip tape, T-shirts |
+| Attendance Records | live DB rows | Fetched from Supabase for migrated routes |
+| Enquiries | live DB rows | Fetched from Supabase |
+| Events | 3 (mock) | Tournament, sports meet, maintenance day |
+| Message Logs | 6 (mock) | Historical WhatsApp send records |

@@ -73,7 +73,8 @@ export type Database = {
           entry_type: Database["public"]["Enums"]["account_entry_type"]
           id: string
           notes: string | null
-          payment_method: Database["public"]["Enums"]["payment_method"]
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
+          vendor: string | null
           updated_at: string
         }
         Insert: {
@@ -86,7 +87,8 @@ export type Database = {
           entry_type: Database["public"]["Enums"]["account_entry_type"]
           id?: string
           notes?: string | null
-          payment_method: Database["public"]["Enums"]["payment_method"]
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
+          vendor?: string | null
           updated_at?: string
         }
         Update: {
@@ -99,12 +101,101 @@ export type Database = {
           entry_type?: Database["public"]["Enums"]["account_entry_type"]
           id?: string
           notes?: string | null
-          payment_method?: Database["public"]["Enums"]["payment_method"]
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
+          vendor?: string | null
           updated_at?: string
         }
         Relationships: [
           {
             foreignKeyName: "account_entries_academy_id_fkey"
+            columns: ["academy_id"]
+            isOneToOne: false
+            referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      custom_expense_categories: {
+        Row: {
+          academy_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          academy_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          academy_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_expense_categories_academy_id_fkey"
+            columns: ["academy_id"]
+            isOneToOne: false
+            referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales: {
+        Row: {
+          academy_id: string
+          amount: number
+          category: string
+          created_at: string
+          date: string
+          id: string
+          inventory_item_id: string | null
+          item_name: string
+          notes: string | null
+          payment_method: string
+          quantity: number | null
+          sale_type: string
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          academy_id: string
+          amount: number
+          category: string
+          created_at?: string
+          date: string
+          id?: string
+          inventory_item_id?: string | null
+          item_name: string
+          notes?: string | null
+          payment_method: string
+          quantity?: number | null
+          sale_type: string
+          unit_price: number
+          updated_at?: string
+        }
+        Update: {
+          academy_id?: string
+          amount?: number
+          category?: string
+          created_at?: string
+          date?: string
+          id?: string
+          inventory_item_id?: string | null
+          item_name?: string
+          notes?: string | null
+          payment_method?: string
+          quantity?: number | null
+          sale_type?: string
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_academy_id_fkey"
             columns: ["academy_id"]
             isOneToOne: false
             referencedRelation: "academies"
@@ -981,6 +1072,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      record_inventory_sale: {
+        Args: {
+          p_academy_id: string
+          p_inventory_item_id?: string
+          p_quantity?: number
+          p_unit_price: number
+          p_amount: number
+          p_item_name: string
+          p_category: string
+          p_payment_method: string
+          p_date: string
+          p_notes?: string | null
+        }
+        Returns: unknown
+      }
+      reverse_inventory_sale: {
+        Args: {
+          p_academy_id: string
+          p_sale_id: string
+        }
+        Returns: unknown
+      }
       claim_staff_invitation: { Args: never; Returns: undefined }
       get_my_academy_id: { Args: never; Returns: string }
       get_my_role: {

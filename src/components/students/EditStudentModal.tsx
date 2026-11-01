@@ -1,19 +1,44 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Student, mockStudents, mockSettings } from '@/lib/mock-data'
-import { CheckCircle, AlertCircle, X } from 'lucide-react'
-import { addMonths, addDays, parseISO, format } from 'date-fns'
+import { Student, Batch, mockSettings, mockBatches } from '@/lib/mock-data'
+import { CheckCircle, AlertCircle, X, Loader2 } from 'lucide-react'
+import { deriveStudentStatus } from '@/lib/utils'
+import { updateStudent } from '@/app/(management)/students/actions'
+import { getBatchesAction } from '@/app/(management)/batches/actions'
 
 export default function EditStudentModal({
   student,
+  batches,
   onClose,
   onSave,
 }: {
   student: Student
+  batches?: Batch[]
   onClose: () => void
   onSave: (updated: Student) => void
 }) {
+  const [batchList, setBatchList] = useState<Batch[]>(batches ?? [])
+
+  useEffect(() => {
+    if (batches && batches.length > 0) {
+      setBatchList(batches)
+    } else {
+      getBatchesAction()
+        .then(res => {
+          if (res && res.length > 0) {
+            setBatchList(res)
+          }
+        })
+        .catch(console.error)
+    }
+  }, [batches])
+
+  const availableBatches = batchList.length > 0
+    ? batchList
+    : mockBatches.length > 0
+      ? mockBatches
+      : mockSettings.batches.map(name => ({ id: name, name, days: [], fees: 0, branchId: '' }))
   // Personal
   const [name, setName] = useState(student.name)
   const [phone, setPhone] = useState(student.phone)
@@ -24,94 +49,88 @@ export default function EditStudentModal({
   const [dateOfBirth, setDateOfBirth] = useState(student.dateOfBirth ?? '')
   const [internalNotes, setInternalNotes] = useState(student.internalNotes ?? '')
 
-  // Membership
-  const [membershipTypeId, setMembershipTypeId] = useState(student.membershipTypeId)
+  // Coaching & Agreement
   const [selectedBatch, setSelectedBatch] = useState(student.currentBatch)
   const [fees, setFees] = useState<number>(student.fees)
   const [startDate, setStartDate] = useState(student.startDate ?? '')
-  const [membershipStartDate, setMembershipStartDate] = useState(student.membershipStartDate)
+  const [nextDueDate, setNextDueDate] = useState(student.nextDueDate ?? '')
   const [enrollmentSource, setEnrollmentSource] = useState<Student['enrollmentSource'] | ''>(student.enrollmentSource ?? '')
 
-  // Toast
+  // Toast & Loading
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(t)
   }, [toast])
 
-  const mt = mockSettings.membershipTypes.find(m => m.id === membershipTypeId)
-
-  const computedNextDue = membershipStartDate && mt
-    ? mt.durationType === 'months'
-      ? format(addMonths(parseISO(membershipStartDate), mt.duration), 'yyyy-MM-dd')
-      : format(addDays(parseISO(membershipStartDate), mt.duration), 'yyyy-MM-dd')
-    : student.nextDueDate
-
-  // Is the resulting due date already in the past?
-  const nextDueIsInPast = computedNextDue < format(new Date(), 'yyyy-MM-dd')
-
-  // Status that will be saved
   const computedStatus = (): Student['status'] => {
-    const today = new Date()
-    const due = parseISO(computedNextDue)
-    const daysUntilDue = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    if (student.status === 'dropout') return 'dropout' // never change off-court via edit
-    if (daysUntilDue < 0) return 'expired'
-    if (daysUntilDue <= 7) return 'due-soon'
-    return 'active'
+    if (student.status === 'dropout') return 'dropout'
+    return deriveStudentStatus(nextDueDate)
   }
 
-  const handleMembershipTypeChange = (newId: string) => {
-    setMembershipTypeId(newId)
-    const newMt = mockSettings.membershipTypes.find(m => m.id === newId)
-    if (newMt) setFees(newMt.price)  // auto-fill; staff can still override manually
-  }
-
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       setToast({ type: 'error', message: 'Student name is required.' })
       return
     }
     if (!phone.trim() || phone.trim().length < 10) {
-      setToast({ type: 'error', message: 'Enter a valid phone number.' })
-      return
-    }
-    if (!membershipStartDate) {
-      setToast({ type: 'error', message: 'Membership start date is required.' })
+      setToast({ type: 'error', message: 'Enter a valid 10-digit phone number.' })
       return
     }
     if (fees < 0) {
       setToast({ type: 'error', message: 'Fee cannot be negative.' })
       return
     }
+    if (!nextDueDate) {
+      setToast({ type: 'error', message: 'End Date / Valid Until is required.' })
+      return
+    }
 
-    // Apply all changes to student object
-    Object.assign(student, {
-      name: name.trim(),
-      phone: phone.trim(),
-      guardianName: guardianName.trim() || undefined,
-      alternatePhone: alternatePhone.trim() || undefined,
-      address: address.trim() || undefined,
-      email: email.trim() || undefined,
-      dateOfBirth: dateOfBirth || undefined,
-      internalNotes: internalNotes.trim() || undefined,
-      membershipTypeId,
-      currentBatch: selectedBatch,
-      fees,
-      startDate: startDate.trim() || student.startDate,
-      membershipStartDate,
-      nextDueDate: computedNextDue,
-      enrollmentSource: enrollmentSource || undefined,
-      status: computedStatus(),
-    })
+    setIsSubmitting(true)
+    try {
+      await updateStudent(student.id, {
+        name: name.trim(),
+        phone: phone.trim(),
+        guardianName: guardianName.trim() || undefined,
+        alternatePhone: alternatePhone.trim() || undefined,
+        dateOfBirth: dateOfBirth || undefined,
+        internalNotes: internalNotes.trim() || undefined,
+        batchId: selectedBatch,
+        fees,
+        nextDueDate,
+        enrollmentSource: (enrollmentSource as any) || undefined,
+      })
 
-    setToast({ type: 'success', message: `${name.trim()} updated successfully.` })
-    setTimeout(() => {
-      onSave(student)
-      onClose()
-    }, 1500)
+      // Apply changes to student object for local UI state
+      Object.assign(student, {
+        name: name.trim(),
+        phone: phone.trim(),
+        guardianName: guardianName.trim() || undefined,
+        alternatePhone: alternatePhone.trim() || undefined,
+        address: address.trim() || undefined,
+        email: email.trim() || undefined,
+        dateOfBirth: dateOfBirth || undefined,
+        internalNotes: internalNotes.trim() || undefined,
+        currentBatch: selectedBatch,
+        fees,
+        nextDueDate,
+        enrollmentSource: enrollmentSource || undefined,
+        status: computedStatus(),
+      })
+
+      setToast({ type: 'success', message: `${name.trim()} updated successfully.` })
+      setTimeout(() => {
+        onSave(student)
+        onClose()
+      }, 1200)
+    } catch (err: unknown) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to update student' })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -127,7 +146,6 @@ export default function EditStudentModal({
 
         {/* Body */}
         <div className="px-6 py-5 overflow-y-auto max-h-[80vh]">
-          
           {/* Section 1 Personal Information */}
           <div className="mb-6">
             <h3 className="text-xs text-so-muted uppercase tracking-wider mb-4">
@@ -233,33 +251,41 @@ export default function EditStudentModal({
 
           <div className="border-t border-so-border mb-6" />
 
-          {/* Section 2 Membership Details */}
+          {/* Section 2 Details & Fee Agreement */}
           <div className="mb-6">
             <h3 className="text-xs text-so-muted uppercase tracking-wider mb-4">
-              Membership Details
+              Coaching & Fee Agreement
             </h3>
             <div className="grid grid-cols-2 gap-4">
-
-              {/* Membership Type */}
+              {/* Batch */}
               <div>
                 <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Membership Type
+                  Batch
                 </label>
                 <select
-                  value={membershipTypeId}
-                  onChange={e => handleMembershipTypeChange(e.target.value)}
-                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
+                  value={selectedBatch}
+                  onChange={e => {
+                    const newBatch = e.target.value
+                    setSelectedBatch(newBatch)
+                    const matched = availableBatches.find(b => b.name === newBatch || b.id === newBatch)
+                    if (matched && typeof matched.fees === 'number' && matched.fees > 0 && (!fees || fees === 0)) {
+                      setFees(matched.fees)
+                    }
+                  }}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent capitalize"
                 >
-                  {mockSettings.membershipTypes.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
+                  {availableBatches.map(b => (
+                    <option key={b.id || b.name} value={b.name}>
+                      {b.name} {b.fees ? `(₹${b.fees.toLocaleString('en-IN')})` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
 
-              {/* Fee */}
+              {/* Custom Fee */}
               <div>
                 <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Fee (₹)
+                  Custom Fee (₹) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -267,35 +293,22 @@ export default function EditStudentModal({
                   value={fees}
                   onChange={e => setFees(Number(e.target.value))}
                   className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
+                  placeholder="Fee amount"
                 />
-                <p className="text-xs text-so-muted mt-1">
-                  Base: ₹{mt?.price.toLocaleString('en-IN') ?? ''}
-                </p>
               </div>
 
-              {/* Membership Start Date */}
+
+              {/* End Date / Valid Until */}
               <div>
                 <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Membership Start Date
+                  End Date / Valid Until <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
-                  value={membershipStartDate}
-                  onChange={e => setMembershipStartDate(e.target.value)}
+                  value={nextDueDate}
+                  onChange={e => setNextDueDate(e.target.value)}
                   className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
                 />
-              </div>
-
-              {/* Next Due read-only derived */}
-              <div>
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Next Due Date
-                </label>
-                <p className={`text-sm font-semibold mt-2 ${
-                  nextDueIsInPast ? 'text-red-500' : 'text-[#5278EA]'
-                }`}>
-                  {format(parseISO(computedNextDue), 'dd MMM yyyy')}
-                </p>
               </div>
 
               {/* Joining Date / Date of Admission */}
@@ -329,77 +342,50 @@ export default function EditStudentModal({
                 </select>
               </div>
             </div>
-
-            {/* Past due warning */}
-            {nextDueIsInPast && (
-              <div className="mt-3 flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                <p className="text-xs text-amber-700">
-                  The computed due date is in the past  student will be marked as <strong>Expired</strong> after saving.
-                </p>
-              </div>
-            )}
-
-            {/* Current Batch pills */}
-            <div className="mt-4">
-              <label className="block text-xs text-so-muted uppercase tracking-wider mb-2">
-                Current Batch
-              </label>
-              <div className="flex gap-2 flex-wrap">
-                {mockSettings.batches.map(batch => (
-                  <button
-                    key={batch}
-                    type="button"
-                    onClick={() => setSelectedBatch(batch)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedBatch === batch
-                        ? 'bg-so-accent text-white'
-                        : 'border border-so-border text-so-muted hover:border-so-accent hover:text-so-text'
-                    }`}
-                  >
-                    {batch}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
           <div className="border-t border-so-border mb-6" />
 
-          {/* Internal Notes */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-so-muted uppercase tracking-wider">Internal Notes</label>
-              <span className="text-xs text-so-muted">{internalNotes.length}/300</span>
-            </div>
+          {/* Section 3 Internal Notes */}
+          <div>
+            <h3 className="text-xs text-so-muted uppercase tracking-wider mb-4">
+              Internal Notes
+            </h3>
             <textarea
-              value={internalNotes}
-              onChange={e => { if (e.target.value.length <= 300) setInternalNotes(e.target.value) }}
+              maxLength={300}
               rows={3}
-              placeholder="Any internal context about this student..."
-              className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text placeholder:text-so-muted focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30 resize-none"
+              value={internalNotes}
+              onChange={e => setInternalNotes(e.target.value)}
+              placeholder="Private notes about the student..."
+              className="w-full bg-white border border-so-border rounded-xl py-2.5 px-3 text-sm text-so-text focus:outline-none focus:border-so-accent transition-colors resize-none placeholder:text-so-muted"
             />
+            <div className="text-right text-xs text-so-muted mt-1">
+              {internalNotes.length}/300
+            </div>
           </div>
-
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 px-6 py-4 border-t border-so-border shrink-0">
+        <div className="px-6 py-4 border-t border-so-border bg-so-surface flex justify-end gap-3">
           <button
+            type="button"
+            disabled={isSubmitting}
             onClick={onClose}
-            className="flex-1 py-2.5 border border-so-border rounded-lg text-sm text-so-muted hover:text-so-text hover:border-so-accent transition-colors"
+            className="px-4 py-2 text-sm font-semibold text-so-muted hover:text-so-text transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
+            type="button"
+            disabled={isSubmitting}
             onClick={handleSave}
-            className="flex-1 py-2.5 bg-so-accent text-white rounded-lg text-sm font-semibold hover:bg-so-accent-hover transition-colors"
+            className="px-5 py-2 bg-so-accent text-white rounded-lg text-sm font-bold hover:bg-so-accent-hover transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
           >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Changes
           </button>
         </div>
 
-        {/* Toast */}
         {toast && (
           <div className={`absolute bottom-4 left-4 right-4 z-10 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium shadow-lg transition-all ${
             toast.type === 'success'
@@ -411,7 +397,7 @@ export default function EditStudentModal({
               : <AlertCircle className="w-4 h-4 flex-shrink-0" />
             }
             <span className="flex-1">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">
+            <button type="button" onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">
               <X className="w-4 h-4" />
             </button>
           </div>

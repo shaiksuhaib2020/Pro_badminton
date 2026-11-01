@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Enquiry, mockEnquiries } from '@/lib/mock-data'
-import { X, Calendar } from 'lucide-react'
+import { X, Loader2 } from 'lucide-react'
 import { getTodayIST } from '@/lib/utils'
+import { createEnquiry } from '@/app/(management)/enquiries/actions'
 
 type Props = {
   onClose: () => void
@@ -18,8 +18,9 @@ export default function AddEnquiryModal({ onClose, onSuccess }: Props) {
   const [scheduleTrial, setScheduleTrial] = useState(false)
   const [trialDate, setTrialDate] = useState('')
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || !phone.trim() || !guardianName.trim()) {
       setError('Please fill all required fields.')
       return
@@ -30,20 +31,24 @@ export default function AddEnquiryModal({ onClose, onSuccess }: Props) {
       return
     }
 
-    const newEnquiry: Enquiry = {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      phone: phone.trim(),
-      guardianName: guardianName.trim(),
-      notes: notes.trim() || undefined,
-      status: scheduleTrial ? 'scheduled' : 'not-scheduled',
-      trialDate: scheduleTrial ? trialDate : undefined,
-      createdAt: getTodayIST()
-    }
+    setError('')
+    setIsSubmitting(true)
+    try {
+      await createEnquiry({
+        name: name.trim(),
+        phone: phone.trim(),
+        guardianName: guardianName.trim(),
+        notes: notes.trim() || undefined,
+        trialDate: scheduleTrial ? trialDate : undefined,
+      })
 
-    mockEnquiries.push(newEnquiry)
-    onSuccess()
-    onClose()
+      onSuccess()
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save enquiry')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -138,7 +143,12 @@ export default function AddEnquiryModal({ onClose, onSuccess }: Props) {
           <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-so-muted hover:text-so-text transition-colors">
             Cancel
           </button>
-          <button onClick={handleSave} className="px-5 py-2 text-sm font-semibold bg-so-accent text-white rounded-lg hover:opacity-90 transition-opacity shadow-sm">
+          <button 
+            disabled={isSubmitting}
+            onClick={handleSave} 
+            className="px-5 py-2 text-sm font-semibold bg-so-accent text-white rounded-lg hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Enquiry
           </button>
         </div>

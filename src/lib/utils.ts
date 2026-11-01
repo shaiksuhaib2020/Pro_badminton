@@ -73,7 +73,7 @@ export function getFirstDayOfMonthIST(): string {
   return `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-import { parseISO } from 'date-fns'
+import { parseISO, differenceInDays } from 'date-fns'
 
 export const calcAge = (dob: string): number => {
   if (!dob) return 0;
@@ -84,3 +84,19 @@ export const calcAge = (dob: string): number => {
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
   return age
 }
+
+export function deriveStudentStatus(nextDueDateStr: string): 'active' | 'due-soon' | 'expired' {
+  const today = new Date()
+  const due   = parseISO(nextDueDateStr)
+  const diff  = differenceInDays(due, today)
+  if (diff < 0)  return 'expired'
+  if (diff <= 3) return 'due-soon'
+  return 'active'
+}
+
+/** DB enum 'due_soon' → app type 'due-soon' */
+export const toAppEnum = (v: string): string => v.replace(/_/g, '-')
+
+/** App type 'due-soon' → DB enum 'due_soon' */
+export const toDbEnum  = (v: string): string => v.replace(/-/g, '_')
+

@@ -1,21 +1,25 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Student, PaymentEntry, mockSettings } from '@/lib/mock-data'
-import { getTodayIST, formatDate } from '@/lib/utils'
-import { addMonths, addDays, parseISO, format } from 'date-fns'
-import { Minus, Plus, X, CheckCircle, AlertCircle, SplitSquareHorizontal } from 'lucide-react'
+import { Student, PaymentEntry, Batch, mockSettings, mockBatches } from '@/lib/mock-data'
+import { formatDate } from '@/lib/utils'
+import { addMonths, parseISO, format } from 'date-fns'
+import { X, CheckCircle, AlertCircle, SplitSquareHorizontal, Loader2 } from 'lucide-react'
+import { renewStudent, collectRemaining } from '@/app/(management)/students/actions'
+import { getBatchesAction } from '@/app/(management)/batches/actions'
 
 export default function RenewModal({
   student,
+  batches,
   isCollectingRemaining = false,
   onClose,
   onConfirm,
 }: {
   student: Student
+  batches?: Batch[]
   isCollectingRemaining?: boolean
   onClose: () => void
-  onConfirm: (
+  onConfirm?: (
     entry: PaymentEntry,
     newDueDate: string,
     newMembershipStartDate: string,
@@ -23,76 +27,96 @@ export default function RenewModal({
     newBatch: string
   ) => void
 }) {
-  const [periods, setPeriods] = useState(1)
+  const [batchList, setBatchList] = useState<Batch[]>(batches ?? [])
 
+  useEffect(() => {
+    if (batches && batches.length > 0) {
+      setBatchList(batches)
+    } else {
+      getBatchesAction()
+        .then(res => {
+          if (res && res.length > 0) {
+            setBatchList(res)
+          }
+        })
+        .catch(console.error)
+    }
+  }, [batches])
+
+  const availableBatches = batchList.length > 0
+    ? batchList
+    : mockBatches.length > 0
+      ? mockBatches
+      : mockSettings.batches.map(name => ({ id: name, name, days: [], fees: 0, branchId: '' }))
+  const [renewalFee, setRenewalFee] = useState<number>(student.fees || 1500)
+  const [newEndDate, setNewEndDate] = useState<string>('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'other'>('cash')
   const [noteValue, setNoteValue] = useState('')
   const [selectedBatch, setSelectedBatch] = useState(student.currentBatch)
 
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(t)
   }, [toast])
 
-  const mt = mockSettings.membershipTypes.find(m => m.id === student.membershipTypeId)
-  const totalAmount = isCollectingRemaining && student.pendingAmount ? student.pendingAmount : (mt?.price ?? student.fees) * periods
+  const effectiveTotal = isCollectingRemaining && student.pendingAmount ? student.pendingAmount : renewalFee
 
   const [isPartial, setIsPartial] = useState(false)
-  const [amountPaying, setAmountPaying] = useState<number>(totalAmount)
+  const [amountPaying, setAmountPaying] = useState<number>(effectiveTotal)
   const [partialDue, setPartialDue] = useState<number>(0)
 
   useEffect(() => {
     if (!isPartial) {
-      setAmountPaying(totalAmount)
+      setAmountPaying(effectiveTotal)
+      setPartialDue(0)
     }
-  }, [totalAmount, isPartial])
+  }, [effectiveTotal, isPartial])
 
-  useEffect(() => {
-    if (isCollectingRemaining && student.pendingAmount) {
-      setPeriods(1)
-      if (!isPartial) setAmountPaying(student.pendingAmount)
-    } else {
-      if (!isPartial) setAmountPaying(totalAmount)
+  const applyPresetMonths = (months: number) => {
+    try {
+      const baseDate = parseISO(student.nextDueDate)
+      const calculated = format(addMonths(baseDate, months), 'yyyy-MM-dd')
+      setNewEndDate(calculated)
+    } catch {
+      const calculated = format(addMonths(new Date(), months), 'yyyy-MM-dd')
+      setNewEndDate(calculated)
     }
-  }, [periods, isCollectingRemaining, student, totalAmount, isPartial])
-  
-  const [periodStart, setPeriodStart] = useState<string>(student.nextDueDate)
+  }
 
-  const newDueDate = isCollectingRemaining
-    ? student.nextDueDate
-    : (mt?.durationType === 'months'
-        ? format(addMonths(parseISO(periodStart), mt.duration * periods), 'yyyy-MM-dd')
-        : format(addDays(parseISO(periodStart), (mt?.duration || 0) * periods), 'yyyy-MM-dd'))
-
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!isCollectingRemaining) {
-      if (!periodStart) {
-        setToast({ type: 'error', message: 'Please select a period start date.' })
+      if (!newEndDate) {
+        setToast({ type: 'error', message: 'Please select a new end date.' })
         return
       }
-      if (periodStart < format(new Date(), 'yyyy-MM-dd')) {
-        setToast({ type: 'error', message: 'Period start date cannot be in the past.' })
+      if (newEndDate <= student.nextDueDate) {
+        setToast({ type: 'error', message: 'New end date must be after current due date.' })
+        return
+      }
+      if (renewalFee < 1) {
+        setToast({ type: 'error', message: 'Renewal fee must be at least ₹1.' })
         return
       }
     }
 
-    if (isPartial && amountPaying + partialDue !== totalAmount) {
-      setToast({ type: 'error', message: `Paying Now + Partial Due must equal ${totalAmount.toLocaleString('en-IN')}` })
-      return
-    }
-    if (isPartial && amountPaying <= 0) {
-      setToast({ type: 'error', message: 'Amount Paying Now must be greater than 0' })
-      return
+    if (isPartial) {
+      if (amountPaying < 0) {
+        setToast({ type: 'error', message: 'Amount paying cannot be negative.' })
+        return
+      }
+      if (partialDue < 0) {
+        setToast({ type: 'error', message: 'Partial due cannot be negative.' })
+        return
+      }
     }
 
-    const effectiveAmount = isPartial ? amountPaying : totalAmount
+    const effectiveAmount = isPartial ? amountPaying : effectiveTotal
     const effectiveRemaining = isPartial ? partialDue : 0
-    const paymentType: PaymentEntry['paymentType'] = isPartial
-      ? 'partial'
-      : periods > 1 ? 'advance' : 'full'
+    const paymentType: PaymentEntry['paymentType'] = isPartial ? 'partial' : 'full'
 
     const newEntry: PaymentEntry = {
       id: crypto.randomUUID(),
@@ -100,16 +124,50 @@ export default function RenewModal({
       amount: effectiveAmount,
       remainingAmount: effectiveRemaining,
       paymentType,
-      monthsCovered: isCollectingRemaining ? 0 : (mt?.durationType === 'months' ? mt.duration * periods : 0),
+      coveredFrom: student.nextDueDate,
+      coveredUntil: isCollectingRemaining ? student.nextDueDate : newEndDate,
       paymentMethod,
       status: 'active',
-      note: noteValue.trim()
+      note: noteValue.trim(),
     }
 
-    setToast({ type: 'success', message: `${isCollectingRemaining ? 'Remaining payment collected' : 'Membership renewed'} successfully` })
-    setTimeout(() => {
-      onConfirm(newEntry, newDueDate, isCollectingRemaining ? student.membershipStartDate : periodStart, effectiveRemaining, selectedBatch)
-    }, 2000)
+    setIsSubmitting(true)
+    try {
+      if (isCollectingRemaining) {
+        await collectRemaining(student.id, {
+          amount: effectiveAmount,
+          paymentMethod,
+          note: noteValue.trim(),
+        })
+      } else {
+        await renewStudent({
+          studentId: student.id,
+          newEndDate,
+          amountPaying: effectiveAmount,
+          renewalFee,
+          partialDue: effectiveRemaining,
+          paymentMethod,
+          note: noteValue.trim(),
+          newBatch: selectedBatch,
+        })
+      }
+
+      setToast({ type: 'success', message: `${isCollectingRemaining ? 'Remaining payment collected' : 'Membership renewed'} successfully` })
+      setTimeout(() => {
+        onConfirm?.(
+          newEntry,
+          isCollectingRemaining ? student.nextDueDate : newEndDate,
+          student.nextDueDate,
+          effectiveRemaining,
+          selectedBatch
+        )
+        onClose()
+      }, 1200)
+    } catch (err: unknown) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to process renewal' })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -121,18 +179,17 @@ export default function RenewModal({
             {isCollectingRemaining ? 'Collect Remaining Payment' : 'Renew Membership'}
           </h2>
           <button onClick={onClose} className="text-so-grey hover:text-so-accent transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-5">
+        <div className="px-6 py-5 space-y-5 overflow-y-auto max-h-[75vh]">
+          {/* Student Info Card */}
           <div className="flex justify-between items-center bg-white border border-so-border rounded-xl p-4">
             <div>
               <p className="text-sm font-semibold text-so-text">{student.name}</p>
-              <p className="text-xs text-so-muted capitalize">{mt?.name}</p>
+              <p className="text-xs text-so-muted capitalize">{selectedBatch || 'No batch'}</p>
             </div>
             <div className="text-right">
               <p className="text-xs text-so-muted">Current Due Date</p>
@@ -141,72 +198,116 @@ export default function RenewModal({
           </div>
 
           {!isCollectingRemaining && (
-            <div>
-              <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-2">Periods to Renew</label>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setPeriods(p => Math.max(1, p - 1))}
-                  className="w-8 h-8 rounded-md border border-so-border flex items-center justify-center hover:border-so-accent"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="w-8 text-center font-mono text-lg">{periods}</span>
-                <button
-                  onClick={() => setPeriods(p => p + 1)}
-                  className="w-8 h-8 rounded-md border border-so-border flex items-center justify-center hover:border-so-accent"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+            <>
+              {/* Renewal Fee */}
+              <div>
+                <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-1.5">
+                  Renewal Fee (₹) <span className="text-so-red">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={renewalFee || ''}
+                  onChange={e => setRenewalFee(Math.max(0, Number(e.target.value)))}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
+                  placeholder="Enter renewal fee"
+                />
               </div>
-              {mt && (
-                <p className="text-xs text-so-muted mt-2">
-                  Extends by {mt.duration * periods} {mt.durationType === 'months' ? 'month' : 'day'}{(mt.duration * periods) > 1 ? 's' : ''}
-                </p>
-              )}
-            </div>
-          )}
-          {!isCollectingRemaining && (
-            <div className="mb-4">
-              <label className="block text-xs text-so-muted uppercase tracking-wider mb-2">
-                Batch
-              </label>
-              <div className="flex gap-2 flex-wrap">
-                {mockSettings.batches.map(batch => (
+
+              {/* Quick Presets & New End Date */}
+              <div>
+                <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-2">
+                  New End Date <span className="text-so-red">*</span>
+                </label>
+                
+                {/* Presets */}
+                <div className="grid grid-cols-4 gap-2 mb-2">
                   <button
-                    key={batch}
-                    onClick={() => setSelectedBatch(batch)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedBatch === batch
-                        ? 'bg-so-accent text-white'
-                        : 'border border-so-border text-so-muted hover:border-so-accent hover:text-so-text'
-                    }`}
+                    type="button"
+                    onClick={() => applyPresetMonths(1)}
+                    className="py-1.5 px-2 bg-so-surface border border-so-border rounded-lg text-xs font-semibold text-so-text hover:bg-so-accent hover:text-white hover:border-so-accent transition-colors"
                   >
-                    {batch}
+                    +1 Month
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => applyPresetMonths(3)}
+                    className="py-1.5 px-2 bg-so-surface border border-so-border rounded-lg text-xs font-semibold text-so-text hover:bg-so-accent hover:text-white hover:border-so-accent transition-colors"
+                  >
+                    +3 Months
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPresetMonths(6)}
+                    className="py-1.5 px-2 bg-so-surface border border-so-border rounded-lg text-xs font-semibold text-so-text hover:bg-so-accent hover:text-white hover:border-so-accent transition-colors"
+                  >
+                    +6 Months
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPresetMonths(12)}
+                    className="py-1.5 px-2 bg-so-surface border border-so-border rounded-lg text-xs font-semibold text-so-text hover:bg-so-accent hover:text-white hover:border-so-accent transition-colors"
+                  >
+                    +1 Year
+                  </button>
+                </div>
+
+                {/* Mandatory Date Picker */}
+                <input
+                  type="date"
+                  value={newEndDate}
+                  min={student.nextDueDate}
+                  onChange={e => setNewEndDate(e.target.value)}
+                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
+                />
+                <p className="text-[11px] text-so-muted mt-1">Must be after {formatDate(student.nextDueDate)}</p>
               </div>
-              {selectedBatch !== student.currentBatch && (
-                <p className="text-xs text-so-yellow mt-1.5">
-                   Batch will be updated from {student.currentBatch} to {selectedBatch}
-                </p>
-              )}
-            </div>
+
+              {/* Batch selection */}
+              <div>
+                <label className="block text-xs text-so-muted uppercase tracking-wider mb-2">
+                  Batch
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {availableBatches.map(batchItem => (
+                    <button
+                      key={batchItem.id || batchItem.name}
+                      type="button"
+                      onClick={() => setSelectedBatch(batchItem.name)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        selectedBatch === batchItem.name
+                          ? 'bg-so-accent text-white'
+                          : 'border border-so-border text-so-muted hover:border-so-accent hover:text-so-text'
+                      }`}
+                    >
+                      {batchItem.name}
+                    </button>
+                  ))}
+                </div>
+                {selectedBatch !== student.currentBatch && (
+                  <p className="text-xs text-so-yellow mt-1.5">
+                    Batch will be updated from {student.currentBatch} to {selectedBatch}
+                  </p>
+                )}
+              </div>
+            </>
           )}
 
+          {/* Fee & Partial Payment Section */}
           <div>
             <label className="block text-xs font-semibold text-so-emerald uppercase tracking-wider mb-2">Total Amount</label>
             <div className="px-4 py-2 text-sm text-so-emerald font-bold bg-so-emerald-subtle border border-so-emerald/20 rounded-lg">
-              ₹ {totalAmount.toLocaleString('en-IN')}
+              ₹ {effectiveTotal.toLocaleString('en-IN')}
             </div>
 
             {/* Partial Payment Toggle */}
-            <div className="mt-1">
+            <div className="mt-2">
               <button
                 type="button"
                 onClick={() => {
                   setIsPartial(p => !p)
                   if (!isPartial) {
-                    setAmountPaying(totalAmount)
+                    setAmountPaying(effectiveTotal)
                     setPartialDue(0)
                   }
                 }}
@@ -221,12 +322,12 @@ export default function RenewModal({
               </button>
             </div>
 
-            {/* Partial Payment Fields */}
+            {/* Partial Payment Fields (Direct entry, no auto-calculation) */}
             {isPartial && (
               <div className="mt-3 p-4 bg-so-surface rounded-xl border border-amber-500/30 space-y-3">
                 <p className="text-xs text-amber-600 font-medium flex items-center gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5" />
-                  Student is paying a partial amount  enter breakdown below
+                  Direct partial breakdown:
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -235,14 +336,9 @@ export default function RenewModal({
                     </label>
                     <input
                       type="number"
-                      min={1}
-                      max={totalAmount}
+                      min={0}
                       value={amountPaying}
-                      onChange={e => {
-                        const paying = Math.max(0, Number(e.target.value))
-                        setAmountPaying(paying)
-                        setPartialDue(Math.max(0, totalAmount - paying))
-                      }}
+                      onChange={e => setAmountPaying(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-emerald font-semibold focus:outline-none focus:border-so-accent"
                       placeholder="0"
                     />
@@ -255,34 +351,24 @@ export default function RenewModal({
                       type="number"
                       min={0}
                       value={partialDue}
-                      onChange={e => {
-                        const due = Math.max(0, Number(e.target.value))
-                        setPartialDue(due)
-                        setAmountPaying(Math.max(0, totalAmount - due))
-                      }}
+                      onChange={e => setPartialDue(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-amber-600 font-semibold focus:outline-none focus:border-amber-500"
                       placeholder="0"
                     />
                   </div>
                 </div>
-                <p className="text-xs text-so-muted">
-                  Total: ₹{(amountPaying + partialDue).toLocaleString('en-IN')} 
-                  {amountPaying + partialDue !== totalAmount && (
-                    <span className="text-red-600 ml-1">
-                      (doesn't match fee of ₹{totalAmount.toLocaleString('en-IN')})
-                    </span>
-                  )}
-                </p>
               </div>
             )}
           </div>
 
+          {/* Payment Method */}
           <div>
             <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-2">Payment Method</label>
             <div className="flex gap-2">
               {(['cash', 'upi', 'card', 'other'] as const).map(method => (
                 <button
                   key={method}
+                  type="button"
                   onClick={() => setPaymentMethod(method)}
                   className={`px-4 py-2 flex-1 rounded-lg text-sm font-medium capitalize transition-colors ${
                     paymentMethod === method
@@ -296,6 +382,7 @@ export default function RenewModal({
             </div>
           </div>
 
+          {/* Note */}
           <div>
             <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-2">Note (Optional)</label>
             <textarea
@@ -303,49 +390,32 @@ export default function RenewModal({
               rows={2}
               value={noteValue}
               onChange={(e) => setNoteValue(e.target.value)}
-              placeholder="e.g. Paid in two instalments, parent requested receipt..."
+              placeholder="e.g. Paid in cash, requested receipt..."
               className="w-full bg-white border border-so-border rounded-xl py-2.5 px-3 text-sm text-so-text focus:outline-none focus:border-so-accent transition-colors resize-none"
             />
             <div className="text-right text-xs text-so-muted mt-1">
               {noteValue.length}/200
             </div>
           </div>
-
-          {!isCollectingRemaining && (
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              <div>
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Period Start
-                </label>
-                <input
-                  type="date"
-                  value={periodStart}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                  onChange={e => setPeriodStart(e.target.value)}
-                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
-                />
-                <p className="text-xs text-so-muted mt-1">
-                  Defaults to current due date
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  New Due Date
-                </label>
-                <p className="text-sm font-semibold text-[#5278EA] mt-2.5">
-                  {periodStart ? format(parseISO(newDueDate), 'dd MMM yyyy') : ''}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-so-border bg-so-surface flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-so-muted hover:text-so-text transition-colors">
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-semibold text-so-muted hover:text-so-text transition-colors disabled:opacity-50"
+          >
             Cancel
           </button>
-          <button onClick={handleConfirm} className="px-5 py-2 bg-so-accent text-white rounded-lg text-sm font-bold hover:bg-so-accent-hover transition-colors">
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={handleConfirm}
+            className="px-5 py-2 bg-so-accent text-white rounded-lg text-sm font-bold hover:bg-so-accent-hover transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Confirm Payment
           </button>
         </div>
@@ -361,7 +431,7 @@ export default function RenewModal({
               : <AlertCircle className="w-4 h-4 flex-shrink-0" />
             }
             <span className="flex-1">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">
+            <button type="button" onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">
               <X className="w-4 h-4" />
             </button>
           </div>

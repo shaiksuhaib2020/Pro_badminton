@@ -41,14 +41,27 @@ export default function ClassCancellation() {
       })
 
       if (res.ok) {
+        const seen = new Set<string>()
+        const recipients = eligibleStudents
+          .filter(s => {
+            if (seen.has(s.phone)) return false
+            seen.add(s.phone)
+            return true
+          })
+          .map(s => ({
+            studentId: s.id,
+            name: s.name || 'Unknown',
+            phone: s.phone || '',
+            status: 'sent' as const,
+          }))
         const newLog: MessageLog = {
           id: `ml-${Date.now()}`,
           templateId: 'class-cancellation',
           sentAt: new Date().toISOString(),
-          recipientCount,
-          status: 'sent',
-          triggeredBy: 'manual',
-          note: `${batchNameStr} - ${reason}`
+          recipientCount: recipients.length,
+          recipients,
+          triggerType: 'manual',
+          reason: `${batchNameStr} - ${reason}`,
         }
         mockMessageLogs.push(newLog)
         setIsSuccess(true)

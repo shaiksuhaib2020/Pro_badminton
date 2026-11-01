@@ -1,15 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { mockStudents, mockSettings, Student, PaymentEntry } from '@/lib/mock-data'
-import { addMonths, addDays, parseISO, format } from 'date-fns'
-import { X, CheckCircle, AlertCircle } from 'lucide-react'
+import { mockStudents, mockSettings, mockBatches, Student, Batch, PaymentEntry } from '@/lib/mock-data'
+import { X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { getTodayIST } from '@/lib/utils'
+import { getTodayIST, deriveStudentStatus } from '@/lib/utils'
+import { createStudent } from '@/app/(management)/students/actions'
+import { getBatchesAction } from '@/app/(management)/batches/actions'
 
 type Props = {
   onClose: () => void
   onSuccess: (student: Student) => void
+  batches?: Batch[]
   defaultBatch?: string
   defaultName?: string
   defaultPhone?: string
@@ -21,6 +23,7 @@ type Props = {
 export default function AddStudentModal({
   onClose,
   onSuccess,
+  batches,
   defaultBatch,
   defaultName,
   defaultPhone,
@@ -30,6 +33,29 @@ export default function AddStudentModal({
 }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'personal' | 'coaching'>('personal')
+
+  // Batches list from prop or server action
+  const [batchList, setBatchList] = useState<Batch[]>(batches ?? [])
+
+  useEffect(() => {
+    if (batches && batches.length > 0) {
+      setBatchList(batches)
+    } else {
+      getBatchesAction()
+        .then(res => {
+          if (res && res.length > 0) {
+            setBatchList(res)
+          }
+        })
+        .catch(console.error)
+    }
+  }, [batches])
+
+  const availableBatches = batchList.length > 0
+    ? batchList
+    : mockBatches.length > 0
+      ? mockBatches
+      : mockSettings.batches.map(name => ({ id: name, name, days: [], fees: 0, branchId: '' }))
 
   // Personal Details
   const [name, setName] = useState(prefillName ?? defaultName ?? '')
@@ -41,46 +67,65 @@ export default function AddStudentModal({
   const [email, setEmail] = useState('')
 
   // Coaching Details
-  const [membershipTypeId, setMembershipTypeId] = useState(mockSettings.membershipTypes[0]?.id || '')
-  const [discountType, setDiscountType] = useState<'₹' | '%'>('₹')
-  const [discountValue, setDiscountValue] = useState(0)
-  const [batch, setBatch] = useState(defaultBatch ?? mockSettings.batches[0] ?? '')
+  const initialBatch = defaultBatch ?? (availableBatches[0]?.name || '')
+  const [batch, setBatch] = useState(initialBatch)
+  const initialBatchFee = availableBatches.find(b => b.name === initialBatch || b.id === initialBatch)?.fees ?? 0
+  const [feeAmount, setFeeAmount] = useState<number>(initialBatchFee > 0 ? initialBatchFee : 1500)
   const [startDate, setStartDate] = useState(getTodayIST())
+  const [endDate, setEndDate] = useState('')
   const [joiningDate, setJoiningDate] = useState('')
   const [enrollmentSource, setEnrollmentSource] = useState<Student['enrollmentSource'] | ''>('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'other'>('upi')
   const [notes, setNotes] = useState('')
 
-  // Fee calculation
-  const mt = mockSettings.membershipTypes.find(m => m.id === membershipTypeId)
-  const baseFee = mt?.price ?? 0
-  const finalFee = Math.max(0,
-    discountType === '₹'
-      ? baseFee - discountValue
-      : baseFee - (baseFee * discountValue / 100)
-  )
-
   // Partial Payment
   const [isPartial, setIsPartial] = useState(false)
-  const [amountPaying, setAmountPaying] = useState<number>(finalFee)
+  const [amountPaying, setAmountPaying] = useState<number>(feeAmount)
   const [partialDue, setPartialDue] = useState<number>(0)
 
   useEffect(() => {
+    if (availableBatches.length > 0) {
+      if (defaultBatch) {
+        setBatch(defaultBatch)
+        const matched = availableBatches.find(b => b.name === defaultBatch || b.id === defaultBatch)
+        if (matched && typeof matched.fees === 'number' && matched.fees > 0) {
+          setFeeAmount(matched.fees)
+        }
+      } else if (!batch || !availableBatches.some(b => b.name === batch || b.id === batch)) {
+        const first = availableBatches[0]
+        setBatch(first.name)
+        if (typeof first.fees === 'number' && first.fees > 0) {
+          setFeeAmount(first.fees)
+        }
+      }
+    }
+  }, [batchList, defaultBatch])
+
+  const handleBatchChange = (selectedBatch: string) => {
+    setBatch(selectedBatch)
+    const matchedBatch = availableBatches.find(b => b.name === selectedBatch || b.id === selectedBatch)
+    if (matchedBatch && typeof matchedBatch.fees === 'number' && matchedBatch.fees > 0) {
+      setFeeAmount(matchedBatch.fees)
+      if (!isPartial) {
+        setAmountPaying(matchedBatch.fees)
+        setPartialDue(0)
+      }
+    }
+  }
+
+  useEffect(() => {
     if (!isPartial) {
-      setAmountPaying(finalFee)
+      setAmountPaying(feeAmount)
       setPartialDue(0)
     }
-  }, [finalFee, isPartial])
-
-  const nextDue = mt?.durationType === 'months'
-    ? addMonths(parseISO(startDate), mt!.duration)
-    : addDays(parseISO(startDate), mt?.duration || 0)
+  }, [feeAmount, isPartial])
 
   // Duplicate phone detection
   const [phoneMatches, setPhoneMatches] = useState<Student[]>([])
   const [showDuplicatePrompt, setShowDuplicatePrompt] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [hasSubmitted, setHasSubmitted] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -107,15 +152,24 @@ export default function AddStudentModal({
     if (!name.trim()) newErrors.name = 'Name is required'
     if (!phone.trim() || phone.length < 10) newErrors.phone = 'Valid 10-digit phone number required'
     if (!guardianName.trim()) newErrors.guardianName = 'Guardian name is required'
-    if (finalFee < 0) newErrors.fee = 'Final fee cannot be negative'
+    if (!feeAmount || feeAmount < 1) newErrors.feeAmount = 'Fee amount must be at least ₹1'
     if (!paymentMethod) newErrors.paymentMethod = 'Payment method is required'
     if (!startDate) newErrors.startDate = 'Start date is required'
+    if (!endDate) {
+      newErrors.endDate = 'End date is required'
+    } else if (endDate <= startDate) {
+      newErrors.endDate = 'End date must be after start date'
+    }
+    if (isPartial) {
+      if (amountPaying < 0) newErrors.amountPaying = 'Amount paying cannot be negative'
+      if (partialDue < 0) newErrors.partialDue = 'Partial due cannot be negative'
+    }
     
     setErrors(newErrors)
     return newErrors
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setHasSubmitted(true)
     const currentErrors = validate()
     
@@ -126,66 +180,85 @@ export default function AddStudentModal({
       return
     }
 
-    if (currentErrors.fee || currentErrors.paymentMethod || currentErrors.startDate) {
+    if (currentErrors.feeAmount || currentErrors.paymentMethod || currentErrors.startDate || currentErrors.endDate || currentErrors.amountPaying || currentErrors.partialDue) {
       setActiveTab('coaching')
-      setToast({ type: 'error', message: 'Please fill all required coaching details correctly.' })
+      setToast({ type: 'error', message: currentErrors.endDate || 'Please fill all required coaching details correctly.' })
       return
     }
 
-    if (isPartial && amountPaying + partialDue !== finalFee) {
-      setActiveTab('coaching')
-      setToast({ type: 'error', message: `Paying Now + Partial Due must equal ₹${finalFee.toLocaleString('en-IN')}` })
-      return
-    }
-    if (isPartial && amountPaying <= 0) {
-      setActiveTab('coaching')
-      setToast({ type: 'error', message: 'Amount Paying Now must be greater than 0' })
-      return
-    }
-
-    const mtRef = mockSettings.membershipTypes.find(m => m.id === membershipTypeId)!
-    const effectiveAmount = isPartial ? amountPaying : finalFee
-    const effectiveRemaining = isPartial ? partialDue : 0
-    const paymentType: PaymentEntry['paymentType'] = isPartial ? 'partial' : 'full'
     const effectiveJoiningDate = joiningDate.trim() ? joiningDate : startDate
 
-    const newStudent: Student = {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      phone: phone.trim(),
-      alternatePhone: alternatePhone.trim(),
-      guardianName: guardianName.trim(),
-      address: address.trim() || undefined,
-      email: email.trim() || undefined,
-      membershipTypeId,
-      currentBatch: batch,
-      fees: finalFee,
-      startDate: effectiveJoiningDate,
-      membershipStartDate: startDate,
-      nextDueDate: format(nextDue, 'yyyy-MM-dd'),
-      status: effectiveRemaining > 0 ? 'due-soon' : 'active',
-      dateOfBirth: dateOfBirth || undefined,
-      enrollmentSource: (enrollmentSource as Student['enrollmentSource']) || undefined,
-      pendingAmount: effectiveRemaining,
-      internalNotes: notes.trim(),
-      paymentHistory: [{
-        id: crypto.randomUUID(),
-        date: startDate,
-        amount: effectiveAmount,
-        remainingAmount: effectiveRemaining,
-        paymentType,
-        monthsCovered: mtRef.duration,
-        paymentMethod: paymentMethod,
-        status: 'active',
-        note: ''
-      }]
+    setIsSubmitting(true)
+    try {
+      await createStudent({
+        name: name.trim(),
+        phone: phone.trim(),
+        alternatePhone: alternatePhone.trim(),
+        guardianName: guardianName.trim(),
+        address: address.trim() || undefined,
+        email: email.trim() || undefined,
+        batch,
+        fees: feeAmount,
+        startDate,
+        endDate,
+        joiningDate: effectiveJoiningDate,
+        amountPaying: isPartial ? amountPaying : feeAmount,
+        partialDue: isPartial ? partialDue : 0,
+        paymentMethod,
+        dateOfBirth: dateOfBirth || undefined,
+        enrollmentSource: (enrollmentSource as any) || undefined,
+        internalNotes: notes.trim(),
+        note: '',
+      })
+
+      const newStudent: Student = {
+        id: `student-${Date.now()}`,
+        name: name.trim(),
+        phone: phone.trim(),
+        alternatePhone: alternatePhone.trim(),
+        guardianName: guardianName.trim(),
+        address: address.trim() || undefined,
+        email: email.trim() || undefined,
+        currentBatch: batch,
+        fees: feeAmount,
+        startDate: effectiveJoiningDate,
+        membershipStartDate: startDate,
+        nextDueDate: endDate,
+        status: deriveStudentStatus(endDate),
+        pendingAmount: isPartial ? partialDue : 0,
+        dateOfBirth: dateOfBirth || undefined,
+        enrollmentSource: enrollmentSource || undefined,
+        internalNotes: notes.trim(),
+        paymentHistory: [
+          {
+            id: crypto.randomUUID(),
+            date: startDate,
+            amount: isPartial ? amountPaying : feeAmount,
+            remainingAmount: isPartial ? partialDue : 0,
+            paymentType: isPartial && partialDue > 0 ? 'partial' : 'full',
+            paymentMethod,
+            coveredFrom: startDate,
+            coveredUntil: endDate,
+            status: 'active',
+            note: '',
+          }
+        ]
+      }
+      mockStudents.unshift(newStudent)
+
+      setToast({ type: 'success', message: `${name.trim()} enrolled successfully` })
+      onSuccess(newStudent)
+      setTimeout(() => onClose(), 1200)
+    } catch (err: unknown) {
+      if (err instanceof Error && (err.message === 'DUPLICATE_PHONE' || err.message.includes('students_phone_per_academy'))) {
+        setActiveTab('personal')
+        setToast({ type: 'error', message: 'A student with this phone number is already registered.' })
+      } else {
+        setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to enroll student' })
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-
-    mockStudents.push(newStudent)
-
-    setToast({ type: 'success', message: `${newStudent.name} enrolled successfully` })
-    onSuccess(newStudent)
-    setTimeout(() => onClose(), 1500)
   }
 
   return (
@@ -419,73 +492,87 @@ export default function AddStudentModal({
             {/* Tab 2: Coaching Details */}
             {activeTab === 'coaching' && (
               <div className="space-y-6 animate-in fade-in duration-200">
-                {/* 1. Membership Type */}
+                {/* 1. Batch */}
                 <div>
                   <label className="block text-xs font-semibold text-so-text mb-1.5">
-                    Membership Type <span className="text-so-red">*</span>
+                    Batch <span className="text-so-red">*</span>
                   </label>
                   <select
-                    value={membershipTypeId}
-                    onChange={e => setMembershipTypeId(e.target.value)}
+                    value={batch}
+                    onChange={e => handleBatchChange(e.target.value)}
                     className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent capitalize"
                   >
-                    {mockSettings.membershipTypes.map(m => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
+                    {availableBatches.length === 0 ? (
+                      <option value="" disabled>No batches created yet</option>
+                    ) : (
+                      availableBatches.map(b => (
+                        <option key={b.id || b.name} value={b.name}>
+                          {b.name} {b.fees ? `(₹${b.fees.toLocaleString('en-IN')})` : ''}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
-                {/* 2. Base Fee, 3. Discount, 4. Final Fee */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-so-surface/50 border border-so-border rounded-xl p-4">
+                {/* 2. Fee Amount (₹) */}
+                <div>
+                  <label className="block text-xs font-semibold text-so-text mb-1.5">
+                    Fee Amount (₹) <span className="text-so-red">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={feeAmount || ''}
+                    onChange={e => setFeeAmount(Math.max(0, Number(e.target.value)))}
+                    placeholder="e.g. 1500"
+                    className={`w-full bg-white border ${
+                      hasSubmitted && errors.feeAmount ? 'border-so-red' : 'border-so-border'
+                    } rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent`}
+                  />
+                  {hasSubmitted && errors.feeAmount && (
+                    <p className="text-so-red text-xs mt-1">{errors.feeAmount}</p>
+                  )}
+                </div>
+
+                {/* 3. Start Date & End Date / Valid Until */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-2">Base Fee</label>
-                    <div className="px-3 py-2 text-sm text-so-muted font-medium bg-white border border-so-border rounded-lg">
-                      ₹ {baseFee.toLocaleString('en-IN')}
-                    </div>
+                    <label className="block text-xs font-semibold text-so-text mb-1.5">
+                      Start Date <span className="text-so-red">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className={`w-full bg-white border ${
+                        hasSubmitted && errors.startDate ? 'border-so-red' : 'border-so-border'
+                      } rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent`}
+                    />
+                    {hasSubmitted && errors.startDate && (
+                      <p className="text-so-red text-xs mt-1">{errors.startDate}</p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-so-muted uppercase tracking-wider mb-2">Discount</label>
-                    <div className="flex">
-                      <button
-                        type="button"
-                        onClick={() => setDiscountType('₹')}
-                        className={`px-3 py-2 text-sm font-medium border border-so-border rounded-l-lg transition-colors ${
-                          discountType === '₹' ? 'bg-so-accent text-white border-so-accent' : 'bg-so-surface text-so-muted'
-                        }`}
-                      >
-                        ₹
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDiscountType('%')}
-                        className={`px-3 py-2 text-sm font-medium border-y border-r border-so-border transition-colors ${
-                          discountType === '%' ? 'bg-so-accent text-white border-so-accent' : 'bg-so-surface text-so-muted'
-                        }`}
-                      >
-                        %
-                      </button>
-                      <input
-                        type="number"
-                        value={discountValue || ''}
-                        onChange={e => setDiscountValue(Number(e.target.value))}
-                        placeholder="0"
-                        min="0"
-                        className="w-full bg-white border-y border-r border-so-border rounded-r-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-so-emerald uppercase tracking-wider mb-2">Final Fee</label>
-                    <div className="px-3 py-2 text-sm text-so-emerald font-bold bg-so-emerald-subtle border border-so-emerald/20 rounded-lg">
-                      ₹ {finalFee.toLocaleString('en-IN')}
-                    </div>
-                    {hasSubmitted && errors.fee && <p className="text-so-red text-xs mt-1">{errors.fee}</p>}
+                    <label className="block text-xs font-semibold text-so-text mb-1.5">
+                      End Date / Valid Until <span className="text-so-red">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate}
+                      onChange={e => setEndDate(e.target.value)}
+                      className={`w-full bg-white border ${
+                        hasSubmitted && errors.endDate ? 'border-so-red' : 'border-so-border'
+                      } rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent`}
+                    />
+                    {hasSubmitted && errors.endDate && (
+                      <p className="text-so-red text-xs mt-1">{errors.endDate}</p>
+                    )}
                   </div>
                 </div>
 
-                {/* 5. Partial Payment option and Payment Mode beside each other */}
+                {/* 4. Partial Payment option and Payment Mode beside each other */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-4 rounded-xl border border-so-border bg-so-surface/30">
                   {/* Left: Partial Payment Option */}
                   <div className="space-y-3">
@@ -498,10 +585,7 @@ export default function AddStudentModal({
                           const checked = e.target.checked
                           setIsPartial(checked)
                           if (!checked) {
-                            setAmountPaying(finalFee)
-                            setPartialDue(0)
-                          } else {
-                            setAmountPaying(finalFee)
+                            setAmountPaying(feeAmount)
                             setPartialDue(0)
                           }
                         }}
@@ -521,17 +605,15 @@ export default function AddStudentModal({
                             </label>
                             <input
                               type="number"
-                              min={1}
-                              max={finalFee}
+                              min={0}
                               value={amountPaying}
-                              onChange={e => {
-                                const paying = Math.max(0, Number(e.target.value))
-                                setAmountPaying(paying)
-                                setPartialDue(Math.max(0, finalFee - paying))
-                              }}
+                              onChange={e => setAmountPaying(Math.max(0, Number(e.target.value)))}
                               className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-emerald font-semibold focus:outline-none focus:border-so-accent"
                               placeholder="0"
                             />
+                            {hasSubmitted && errors.amountPaying && (
+                              <p className="text-so-red text-xs mt-1">{errors.amountPaying}</p>
+                            )}
                           </div>
                           <div>
                             <label className="block text-xs text-so-muted uppercase tracking-wider mb-1">
@@ -541,28 +623,19 @@ export default function AddStudentModal({
                               type="number"
                               min={0}
                               value={partialDue}
-                              onChange={e => {
-                                const due = Math.max(0, Number(e.target.value))
-                                setPartialDue(due)
-                                setAmountPaying(Math.max(0, finalFee - due))
-                              }}
+                              onChange={e => setPartialDue(Math.max(0, Number(e.target.value)))}
                               className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-amber-600 font-semibold focus:outline-none focus:border-amber-500"
                               placeholder="0"
                             />
+                            {hasSubmitted && errors.partialDue && (
+                              <p className="text-so-red text-xs mt-1">{errors.partialDue}</p>
+                            )}
                           </div>
                         </div>
-                        <p className="text-xs text-so-muted">
-                          Total: ₹{(amountPaying + partialDue).toLocaleString('en-IN')} 
-                          {amountPaying + partialDue !== finalFee && (
-                            <span className="text-red-600 ml-1">
-                              (doesn't match fee of ₹{finalFee.toLocaleString('en-IN')})
-                            </span>
-                          )}
-                        </p>
                       </div>
                     ) : (
                       <p className="text-xs text-so-muted">
-                        Full payment of ₹{finalFee.toLocaleString('en-IN')} will be recorded upon enrollment.
+                        Full payment of ₹{feeAmount.toLocaleString('en-IN')} will be recorded upon enrollment.
                       </p>
                     )}
                   </div>
@@ -594,52 +667,7 @@ export default function AddStudentModal({
                   </div>
                 </div>
 
-                {/* 6. Batch */}
-                <div>
-                  <label className="block text-xs font-semibold text-so-text mb-1.5">
-                    Batch <span className="text-so-red">*</span>
-                  </label>
-                  <select
-                    value={batch}
-                    onChange={e => setBatch(e.target.value)}
-                    className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent capitalize"
-                  >
-                    {mockSettings.batches.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 7. Start Date & 8. Next Due Date */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-xs font-semibold text-so-text mb-1.5">
-                      Start Date <span className="text-so-red">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={e => setStartDate(e.target.value)}
-                      className={`w-full bg-white border ${
-                        hasSubmitted && errors.startDate ? 'border-so-red' : 'border-so-border'
-                      } rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent`}
-                    />
-                    {hasSubmitted && errors.startDate && (
-                      <p className="text-so-red text-xs mt-1">{errors.startDate}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-so-text mb-1.5">
-                      Next Due Date
-                    </label>
-                    <div className="w-full bg-so-surface border border-so-border rounded-lg px-3 py-2 text-sm text-[#5278EA] font-semibold truncate flex items-center h-[38px]">
-                      {format(nextDue, 'dd MMM yyyy')}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 9. Joining Date / Date of Admission & 10. Source */}
+                {/* 5. Joining Date / Date of Admission & Source */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-xs font-semibold text-so-text mb-1.5">
@@ -672,7 +700,7 @@ export default function AddStudentModal({
                   </div>
                 </div>
 
-                {/* 11. Internal Notes */}
+                {/* 6. Internal Notes */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-semibold text-so-text uppercase tracking-wider">
@@ -707,9 +735,11 @@ export default function AddStudentModal({
           </button>
           <button 
             type="button"
+            disabled={isSubmitting}
             onClick={handleSubmit} 
-            className="px-6 py-2 bg-so-accent text-white rounded-lg text-sm font-bold hover:bg-so-accent-hover transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-so-accent text-white rounded-lg text-sm font-bold hover:bg-so-accent-hover transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
           >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Enroll Student
           </button>
         </div>

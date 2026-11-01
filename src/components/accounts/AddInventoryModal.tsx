@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
-import { X, ChevronDown, Smile } from 'lucide-react'
-import { InventoryItem, mockInventoryItems } from '@/lib/mock-data'
+import { X, ChevronDown, Smile, Loader2 } from 'lucide-react'
+import type { InventoryItem } from '@/lib/mock-data'
 import EmojiPicker from 'emoji-picker-react'
 
 interface AddInventoryModalProps {
   categories: string[]
   onClose: () => void
   onSave: (item: Omit<InventoryItem, 'id'>, newCategory?: string) => void
+  saving?: boolean
 }
 
-export default function AddInventoryModal({ categories, onClose, onSave }: AddInventoryModalProps) {
+export default function AddInventoryModal({ categories, onClose, onSave, saving }: AddInventoryModalProps) {
   const [sku, setSku] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -48,9 +49,6 @@ export default function AddInventoryModal({ categories, onClose, onSave }: AddIn
     if (!quantity || Number(quantity) < 0) { setError('Enter a valid quantity.'); return }
     if (!price || Number(price) <= 0) { setError('Enter a valid purchase price.'); return }
     if (!sellingPrice || Number(sellingPrice) <= 0) { setError('Enter a valid selling price.'); return }
-    
-    const existingSku = mockInventoryItems.find(i => i.sku.toLowerCase() === trimmedSku.toLowerCase())
-    if (existingSku) { setError('SKU must be unique. Another item already uses this SKU.'); return }
 
     setError('')
     
@@ -218,8 +216,22 @@ export default function AddInventoryModal({ categories, onClose, onSave }: AddIn
           {error && <p className="text-xs text-red-500">{error}</p>}
           
           <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="px-5 py-2 border border-so-border rounded-lg text-sm text-so-muted hover:text-so-text">Cancel</button>
-            <button type="submit" className="px-5 py-2 bg-so-accent text-so-accent-text rounded-lg text-sm font-semibold shadow-sm">Save Item</button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="px-5 py-2 border border-so-border rounded-lg text-sm text-so-muted hover:text-so-text disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 bg-so-accent text-so-accent-text rounded-lg text-sm font-semibold shadow-sm hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving ? 'Saving...' : 'Save Item'}
+            </button>
           </div>
         </form>
       </div>

@@ -1,44 +1,57 @@
 'use client'
 
 import { useState } from 'react'
-import { Student, PaymentEntry, mockSettings } from '@/lib/mock-data'
-import { X } from 'lucide-react'
+import { Student, PaymentEntry } from '@/lib/mock-data'
+import { X, Loader2 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
+import { collectRemaining } from '@/app/(management)/students/actions'
 
 type Props = {
   student: Student
   onClose: () => void
-  onConfirm: (entry: PaymentEntry) => void
+  onConfirm?: (entry: PaymentEntry) => void
 }
 
 export default function CollectRemainingModal({ student, onClose, onConfirm }: Props) {
   const [amountPaid, setAmountPaid] = useState<number>(student.pendingAmount || 0)
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'other'>('cash')
   const [note, setNote] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const membershipType = mockSettings.membershipTypes.find(m => m.id === student.membershipTypeId)
-
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (amountPaid <= 0) return
 
-    const entry: PaymentEntry = {
-      id: crypto.randomUUID(),
-      date: format(new Date(), 'yyyy-MM-dd'),
-      amount: amountPaid,
-      remainingAmount: 0,
-      paymentType: 'full',      // collecting the remaining clears the debt
-      monthsCovered: 0,         // no new period — just clearing existing debt
-      paymentMethod,
-      status: 'active',
-      note: note.trim(),
+    setIsSubmitting(true)
+    try {
+      await collectRemaining(student.id, {
+        amount: amountPaid,
+        paymentMethod,
+        note: note.trim(),
+      })
+      const entry: PaymentEntry = {
+        id: crypto.randomUUID(),
+        date: format(new Date(), 'yyyy-MM-dd'),
+        amount: amountPaid,
+        remainingAmount: 0,
+        paymentType: 'full',
+        coveredFrom: student.nextDueDate,
+        coveredUntil: student.nextDueDate,
+        paymentMethod,
+        status: 'active',
+        note: note.trim(),
+      }
+      onConfirm?.(entry)
+      onClose()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to collect payment')
+    } finally {
+      setIsSubmitting(false)
     }
-    onConfirm(entry)
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-so-card rounded-2xl shadow-2xl border border-so-border w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
-        
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-so-border bg-so-surface/30">
           <h2 className="text-lg font-bold text-so-text">Collect Remaining Payment</h2>
@@ -53,7 +66,7 @@ export default function CollectRemainingModal({ student, onClose, onConfirm }: P
           <div className="bg-so-surface rounded-xl p-4 flex items-center justify-between border border-so-border">
             <div>
               <p className="text-sm font-semibold text-so-text">{student.name}</p>
-              <p className="text-xs text-so-muted mt-0.5">{membershipType?.name || 'Membership'}</p>
+              <p className="text-xs text-so-muted mt-0.5 capitalize">{student.currentBatch || 'No batch'}</p>
             </div>
             <div className="text-right">
               <p className="text-[10px] font-bold text-so-muted uppercase tracking-wider">Current Due Date</p>
@@ -85,6 +98,7 @@ export default function CollectRemainingModal({ student, onClose, onConfirm }: P
               {(['cash', 'upi', 'card', 'other'] as const).map(method => (
                 <button
                   key={method}
+                  type="button"
                   onClick={() => setPaymentMethod(method)}
                   className={`py-2 rounded-lg text-xs font-semibold transition-all capitalize ${
                     paymentMethod === method
@@ -118,20 +132,23 @@ export default function CollectRemainingModal({ student, onClose, onConfirm }: P
         {/* Footer */}
         <div className="px-5 py-4 border-t border-so-border bg-so-surface/30 flex gap-3">
           <button
+            type="button"
+            disabled={isSubmitting}
             onClick={onClose}
-            className="flex-1 py-2.5 bg-white border border-so-border rounded-xl text-sm font-semibold text-so-muted hover:text-so-text hover:border-so-accent transition-colors"
+            className="flex-1 py-2.5 bg-white border border-so-border rounded-xl text-sm font-semibold text-so-muted hover:text-so-text hover:border-so-accent transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
+            type="button"
+            disabled={isSubmitting || amountPaid <= 0}
             onClick={handleConfirm}
-            disabled={amountPaid <= 0}
-            className="flex-1 py-2.5 bg-so-accent text-white rounded-xl text-sm font-bold hover:bg-so-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="flex-1 py-2.5 bg-so-accent text-white rounded-xl text-sm font-bold hover:bg-so-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm inline-flex items-center justify-center gap-1.5"
           >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Confirm Payment
           </button>
         </div>
-        
       </div>
     </div>
   )

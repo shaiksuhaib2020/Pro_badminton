@@ -1,7 +1,10 @@
+'use client'
+
 import React, { useState } from 'react'
 import { Student } from '@/lib/mock-data'
-import { X } from 'lucide-react'
+import { X, Loader2 } from 'lucide-react'
 import { formatDate, getTodayIST } from '@/lib/utils'
+import { dropoutStudent } from '@/app/(management)/students/actions'
 
 interface DropoutConfirmModalProps {
   student: Student
@@ -11,11 +14,26 @@ interface DropoutConfirmModalProps {
 
 export default function DropoutConfirmModal({ student, onClose, onConfirm }: DropoutConfirmModalProps) {
   const [reason, setReason] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleConfirm = async () => {
+    if (!reason.trim()) return
+
+    setIsSubmitting(true)
+    try {
+      await dropoutStudent({ studentId: student.id, reason: reason.trim() })
+      onConfirm(reason.trim())
+      onClose()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to move student to dropout')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-so-card border border-so-border rounded-2xl w-full max-w-md shadow-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-so-border">
           <h2 className="text-lg font-semibold text-so-text">Move to Dropout</h2>
@@ -37,7 +55,7 @@ export default function DropoutConfirmModal({ student, onClose, onConfirm }: Dro
             </div>
             <div>
               <p className="text-xs text-so-muted uppercase tracking-wide">Guardian</p>
-              <p className="text-sm font-medium text-so-text">{student.guardianName}</p>
+              <p className="text-sm font-medium text-so-text">{student.guardianName || '-'}</p>
             </div>
             <div>
               <p className="text-xs text-so-muted uppercase tracking-wide">Date</p>
@@ -49,8 +67,8 @@ export default function DropoutConfirmModal({ student, onClose, onConfirm }: Dro
             <label className="block text-xs text-so-muted uppercase font-medium mb-1.5">
               Reason for Dropping Out
             </label>
-            <textarea 
-              rows={3} 
+            <textarea
+              rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="e.g. Relocated, health reasons, fees concern..."
@@ -61,24 +79,24 @@ export default function DropoutConfirmModal({ student, onClose, onConfirm }: Dro
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 bg-so-surface/50 border-t border-so-border">
-          <button 
+          <button
+            type="button"
+            disabled={isSubmitting}
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-so-text border border-so-border hover:bg-so-surface transition-colors"
+            className="px-4 py-2 rounded-lg text-sm font-medium text-so-text border border-so-border hover:bg-so-surface transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
-          <button 
-            onClick={() => {
-              onConfirm(reason)
-              onClose()
-            }}
-            disabled={reason.trim() === ''}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-so-red text-white hover:bg-so-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <button
+            type="button"
+            disabled={reason.trim() === '' || isSubmitting}
+            onClick={handleConfirm}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-so-red text-white hover:bg-so-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
           >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Move to Dropout
           </button>
         </div>
-
       </div>
     </div>
   )

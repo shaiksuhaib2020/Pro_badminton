@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { mockStudents, mockSettings, Student, PaymentEntry, mockCourtMemberships, mockCourtPlans, CourtMembership, CourtPaymentEntry, getMembershipDisplayLabel } from '@/lib/mock-data'
 import { addMonths, addDays, isWithinInterval, parseISO, format, startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay, differenceInDays } from 'date-fns'
-import { getTodayIST } from '@/lib/utils'
+import { getTodayIST, deriveStudentStatus } from '@/lib/utils'
 import { Search, SlidersHorizontal, X, Receipt, CheckCircle, RefreshCw, Wallet, Trash2, AlertCircle, Clock, CheckSquare, Check, CreditCard } from 'lucide-react'
 import RenewModal from '@/components/coaching/RenewModal'
 import CollectRemainingModal from '@/components/students/CollectRemainingModal'
@@ -42,13 +42,13 @@ export default function TransactionsPage() {
     const bulkStudents = pendingRows.filter(s => selectedIds.has(s.id))
 
     bulkStudents.forEach(student => {
-      const mt = mockSettings.membershipTypes.find(m => m.id === student.membershipTypeId)
+      // 1 month
 
       // 1 period, chains from current nextDueDate
       const newMembershipStartDate = student.nextDueDate
-      const newDueDate = mt?.durationType === 'months'
-        ? format(addMonths(parseISO(student.nextDueDate), mt.duration), 'yyyy-MM-dd')
-        : format(addDays(parseISO(student.nextDueDate), mt?.duration ?? 0), 'yyyy-MM-dd')
+      const newDueDate = format(addMonths(parseISO(student.nextDueDate), 1), 'yyyy-MM-dd')
+
+
 
       const amt = student.pendingAmount > 0 ? student.pendingAmount : student.fees
 
@@ -58,7 +58,8 @@ export default function TransactionsPage() {
         amount: amt,
         remainingAmount: 0,
         paymentType: 'full',
-        monthsCovered: mt?.duration ?? 1,
+        coveredFrom: student.nextDueDate,
+        coveredUntil: newDueDate,
         paymentMethod: bulkMethod,
         status: 'active',
         note: 'Bulk payment'
@@ -68,7 +69,7 @@ export default function TransactionsPage() {
       student.nextDueDate = newDueDate
       student.membershipStartDate = newMembershipStartDate
       student.pendingAmount = 0
-      student.status = 'active'
+      student.status = deriveStudentStatus(newDueDate)
     })
 
     setShowBulkModal(false)
@@ -303,7 +304,7 @@ const searchPlaceholders: Record<TabType, string> = {
       studentCurrentBatch: s.currentBatch,
       studentFees: s.fees,
       studentNextDueDate: s.nextDueDate,
-      membershipTypeId: s.membershipTypeId,
+
     })))
     .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
 
@@ -1189,7 +1190,7 @@ const searchPlaceholders: Record<TabType, string> = {
             student.paymentHistory.push(entry)
             student.pendingAmount = 0
             if (student.status === 'due-soon' || student.status === 'expired') {
-              student.status = 'active'
+              student.status = deriveStudentStatus(student.nextDueDate)
             }
             setCollectRemainingTarget(null)
             refresh()
@@ -1238,8 +1239,8 @@ const searchPlaceholders: Record<TabType, string> = {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-so-text truncate">{student.name}</p>
                         <p className="text-xs text-so-muted">
-                          {mockSettings.membershipTypes.find(m => m.id === student.membershipTypeId)?.name ?? ''}
-                          {' • '}{student.currentBatch}
+                          {student.currentBatch}
+
                         </p>
                       </div>
                       {/* Amount */}

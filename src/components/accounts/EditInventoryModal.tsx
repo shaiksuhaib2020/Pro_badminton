@@ -1,17 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
-import { X, Smile } from 'lucide-react'
-import { InventoryItem, mockInventoryItems } from '@/lib/mock-data'
+import { X, Smile, Loader2 } from 'lucide-react'
+import type { InventoryItem } from '@/lib/mock-data'
 import EmojiPicker from 'emoji-picker-react'
 
 interface EditInventoryModalProps {
   item: InventoryItem
   categories?: string[]
   onClose: () => void
-  onSave?: () => void
-  onSuccess?: () => void
+  onSave: (item: Omit<InventoryItem, 'id'>) => void
+  saving?: boolean
 }
 
-export default function EditInventoryModal({ item, categories, onClose, onSave, onSuccess }: EditInventoryModalProps) {
+export default function EditInventoryModal({ item, categories, onClose, onSave, saving }: EditInventoryModalProps) {
   const [sku, setSku] = useState(item.sku || '')
   const [name, setName] = useState(item.name)
   const [description, setDescription] = useState(item.description || '')
@@ -50,31 +50,22 @@ export default function EditInventoryModal({ item, categories, onClose, onSave, 
     if (quantity < 0) { setError('Enter a valid quantity.'); return }
     if (price <= 0) { setError('Enter a valid purchase price.'); return }
     if (sellingPrice <= 0) { setError('Enter a valid selling price.'); return }
-    
-    const existingSku = mockInventoryItems.find(i => i.sku.toLowerCase() === trimmedSku.toLowerCase() && i.id !== item.id)
-    if (existingSku) { setError('SKU must be unique. Another item already uses this SKU.'); return }
 
     setError('')
     
     const finalUnit = unitMode === 'custom' ? (unitCustom.trim() || 'piece') : unit
     
-    // Update the mock data directly
-    const target = mockInventoryItems.find(i => i.id === item.id)
-    if (target) {
-      target.sku = sku.trim()
-      target.name = name.trim()
-      target.category = category
-      target.description = description.trim()
-      target.unit = finalUnit
-      target.quantity = quantity
-      target.price = price
-      target.sellingPrice = sellingPrice
-      target.icon = icon.trim() || undefined
-    }
-    
-    if (onSuccess) onSuccess()
-    if (onSave) onSave()
-    onClose()
+    onSave({
+      sku: sku.trim(),
+      name: name.trim(),
+      category,
+      description: description.trim(),
+      unit: finalUnit,
+      quantity,
+      price,
+      sellingPrice,
+      icon: icon.trim() || undefined,
+    })
   }
 
   return (
@@ -213,8 +204,22 @@ export default function EditInventoryModal({ item, categories, onClose, onSave, 
           {error && <p className="text-xs text-red-500">{error}</p>}
           
           <div className="pt-4 flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 py-2 border border-so-border rounded-lg text-sm text-so-muted hover:text-so-text">Cancel</button>
-            <button type="submit" className="flex-1 py-2 bg-so-accent text-so-accent-text rounded-lg text-sm font-semibold">Save Changes</button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="flex-1 py-2 border border-so-border rounded-lg text-sm text-so-muted hover:text-so-text disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-2 bg-so-accent text-so-accent-text rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
           </div>
         </form>
       </div>

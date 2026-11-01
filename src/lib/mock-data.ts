@@ -11,6 +11,7 @@ export type Enquiry = {
   status: EnquiryStatus
   trialDate?: string   // YYYY-MM-DD — only present when status is 'scheduled' or 'completed'
   createdAt: string    // YYYY-MM-DD
+  updatedAt?: string
 }
 
 export let mockEnquiries: Enquiry[] = [
@@ -21,14 +22,17 @@ export let mockEnquiries: Enquiry[] = [
   { id: 'eq5', name: 'Kiran Babu',      phone: '9988776655', guardianName: 'Raju Babu',     status: 'scheduled',     trialDate: '2026-10-10', createdAt: '2026-10-03' },
 ]
 
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'other'
+
 export type PaymentEntry = {
   id: string
   date: string
   amount: number
   remainingAmount: number
   paymentType: 'full' | 'partial' | 'advance'
-  monthsCovered: number
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
+  coveredFrom?: string
+  coveredUntil?: string
+  paymentMethod: PaymentMethod
   status: 'active' | 'inactive' | 'deleted'
   note: string
 }
@@ -41,7 +45,7 @@ export type Student = {
   guardianName: string
   address?: string
   email?: string
-  membershipTypeId: string
+
   currentBatch: string
   fees: number
   startDate: string
@@ -86,7 +90,7 @@ export type CourtPaymentEntry = {
   amount: number
   payingNow?: number
   partialDue?: number
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
+  paymentMethod: PaymentMethod
   entryType: CourtPaymentEntryType
   status: CourtPaymentEntryStatus
   note?: string
@@ -128,14 +132,6 @@ export type CourtMembership = {
   notes?: string
   paymentHistory: CourtPaymentEntry[]
   checkInHistory: CourtCheckIn[]
-}
-
-export type MembershipType = {
-  id: string
-  name: string
-  durationType: 'months' | 'days'
-  duration: number
-  price: number
 }
 
 export type Event = {
@@ -190,7 +186,7 @@ export type Settings = {
   multiBranchEnabled: boolean
   branches: Branch[]
   staffMembers: StaffMember[]
-  membershipTypes: MembershipType[]
+
   batches: string[]
   feeReminderEnabled: boolean
   feeAckEnabled: boolean
@@ -483,139 +479,134 @@ export let mockSettings: Settings = {
     },
   ],
   batches: mockBatches.map(b => b.name),
-  membershipTypes: [
-    { id: 'monthly',   name: 'Monthly',   durationType: 'months', duration: 1,  price: 1500  },
-    { id: 'quarterly', name: 'Quarterly', durationType: 'months', duration: 3,  price: 4000  },
-    { id: 'annual',    name: 'Annual',    durationType: 'months', duration: 12, price: 14000 },
-  ]
 }
 
 export let mockEvents: Event[] = [
   { id: '1', name: 'Summer Tournament 2026', type: 'tournament', date: '2026-09-15', description: 'Annual inter-batch badminton tournament. All students eligible.' },
   { id: '2', name: 'Sports Meet', type: 'sports-meet', date: '2026-10-02', description: 'Multi-sport event for all academy members and families.' },
-  { id: '3', name: 'Academy Closed  Maintenance', type: 'general', date: '2026-07-20', description: 'Courts closed for maintenance. This event is past  tests auto-hide.' }
+  { id: '3', name: 'Academy Closed – Maintenance', type: 'general', date: '2026-07-20', description: 'Courts closed for maintenance. This event is past – tests auto-hide.' }
 ]
 
 export let mockStudents: Student[] = [
   {
     id: 's1', name: 'Kabir Singh', phone: '9876543214', alternatePhone: '9876543200', guardianName: 'Ramesh Singh',
-    membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2026-01-01', membershipStartDate: '2026-08-01',
+    currentBatch: 'Morning', fees: 1500, startDate: '2026-01-01', membershipStartDate: '2026-08-01',
     nextDueDate: '2026-09-01', status: 'due-soon', pendingAmount: 0, internalNotes: '',
     dateOfBirth: '2012-05-10', enrollmentSource: 'walk-in',
     paymentHistory: [
-      { id: 'p1', date: '2026-01-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p2', date: '2026-02-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p3', date: '2026-08-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' }
+      { id: 'p1', date: '2026-01-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p2', date: '2026-02-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p3', date: '2026-08-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' }
     ]
   },
   {
     id: 's2', name: 'Aditi Rao', phone: '9876543215', alternatePhone: '', guardianName: 'Sunita Rao',
-    membershipTypeId: 'quarterly', currentBatch: 'Evening', fees: 4000, startDate: '2026-02-01', membershipStartDate: '2026-06-01',
+    currentBatch: 'Evening', fees: 4000, startDate: '2026-02-01', membershipStartDate: '2026-06-01',
     nextDueDate: '2026-09-01', status: 'due-soon', pendingAmount: 0, internalNotes: '',
     dateOfBirth: '2010-08-22', enrollmentSource: 'referral',
     paymentHistory: [
-      { id: 'p4', date: '2026-02-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' },
-      { id: 'p5', date: '2026-06-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' }
+      { id: 'p4', date: '2026-02-01', amount: 4000, remainingAmount: 0, paymentType: 'full', paymentMethod: 'cash', status: 'active', note: '' },
+      { id: 'p5', date: '2026-06-01', amount: 4000, remainingAmount: 0, paymentType: 'full', paymentMethod: 'cash', status: 'active', note: '' }
     ]
   },
   {
     id: 's3', name: 'Aryan Das', phone: '9876543216', alternatePhone: '', guardianName: 'Priya Das',
-    membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2025-11-01', membershipStartDate: '2026-07-01',
+    currentBatch: 'Morning', fees: 1500, startDate: '2025-11-01', membershipStartDate: '2026-07-01',
     nextDueDate: '2026-08-01', status: 'expired', pendingAmount: 0, internalNotes: 'Prefers morning slot',
     dateOfBirth: '2008-11-15', enrollmentSource: 'social-media',
     paymentHistory: [
-      { id: 'p6', date: '2025-11-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p7', date: '2026-07-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'other', status: 'active', note: '' }
+      { id: 'p6', date: '2025-11-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p7', date: '2026-07-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'other', status: 'active', note: '' }
     ]
   },
   {
     id: 's4', name: 'Diya Kumar', phone: '9876543216', alternatePhone: '', guardianName: 'Priya Das',
-    membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2025-11-15', membershipStartDate: '2026-07-15',
+    currentBatch: 'Evening', fees: 1500, startDate: '2025-11-15', membershipStartDate: '2026-07-15',
     nextDueDate: '2026-08-15', status: 'expired', pendingAmount: 0, internalNotes: 'Sibling of Aryan Das same guardian phone',
     dateOfBirth: '2014-02-28', enrollmentSource: 'referral',
     paymentHistory: [
-      { id: 'p8', date: '2025-11-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p9', date: '2026-07-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' }
+      { id: 'p8', date: '2025-11-15', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p9', date: '2026-07-15', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' }
     ]
   },
   {
     id: 's5', name: 'Aarav Sharma', phone: '9876543210', alternatePhone: '9876543211', guardianName: 'Vikram Sharma',
-    membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2026-03-01', membershipStartDate: '2026-08-01',
+    currentBatch: 'Morning', fees: 1500, startDate: '2026-03-01', membershipStartDate: '2026-08-01',
     nextDueDate: '2026-09-01', status: 'active', pendingAmount: 0, internalNotes: '',
     dateOfBirth: '2005-06-10', enrollmentSource: 'walk-in',
     paymentHistory: [
-      { id: 'p10', date: '2026-03-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p11', date: '2026-04-01', amount: 3000, remainingAmount: 0, paymentType: 'advance', monthsCovered: 2, paymentMethod: 'card', status: 'active', note: 'Paid via UPI receipt shared on WhatsApp' },
-      { id: 'p12', date: '2026-08-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' }
+      { id: 'p10', date: '2026-03-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p11', date: '2026-04-01', amount: 3000, remainingAmount: 0, paymentType: 'advance', paymentMethod: 'card', status: 'active', note: 'Paid via UPI receipt shared on WhatsApp' },
+      { id: 'p12', date: '2026-08-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' }
     ]
   },
   {
     id: 's6', name: 'Arjun Mehta', phone: '9876543218', alternatePhone: '', guardianName: 'Suresh Mehta',
-    membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1500, startDate: '2026-04-10', membershipStartDate: '2026-08-10',
+    currentBatch: 'Morning', fees: 1500, startDate: '2026-04-10', membershipStartDate: '2026-08-10',
     nextDueDate: '2026-09-10', status: 'active', pendingAmount: 500, internalNotes: 'Partial payment pending',
     dateOfBirth: '2011-09-05', enrollmentSource: 'other',
     paymentHistory: [
-      { id: 'p13', date: '2026-04-10', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'cash', status: 'active', note: '' },
-      { id: 'p14', date: '2026-08-10', amount: 1000, remainingAmount: 500, paymentType: 'partial', monthsCovered: 1, paymentMethod: 'cash', status: 'active', note: '' }
+      { id: 'p13', date: '2026-04-10', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'cash', status: 'active', note: '' },
+      { id: 'p14', date: '2026-08-10', amount: 1000, remainingAmount: 500, paymentType: 'partial', paymentMethod: 'cash', status: 'active', note: '' }
     ]
   },
   {
     id: 's7', name: 'Ananya Reddy', phone: '9876543213', alternatePhone: '', guardianName: 'Lakshmi Reddy',
-    membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2026-02-15', membershipStartDate: '2026-08-15',
+    currentBatch: 'Evening', fees: 1500, startDate: '2026-02-15', membershipStartDate: '2026-08-15',
     nextDueDate: '2026-09-15', status: 'active', pendingAmount: 0, internalNotes: '',
     dateOfBirth: '2009-12-12', enrollmentSource: 'social-media',
     paymentHistory: [
-      { id: 'p15', date: '2026-02-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p16', date: '2026-08-15', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' }
+      { id: 'p15', date: '2026-02-15', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p16', date: '2026-08-15', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' }
     ]
   },
   {
     id: 's8', name: 'Vivaan Gupta', phone: '9876543211', alternatePhone: '', guardianName: 'Anil Gupta',
-    membershipTypeId: 'quarterly', currentBatch: 'Evening', fees: 4000, startDate: '2026-01-01', membershipStartDate: '2026-07-01',
+    currentBatch: 'Evening', fees: 4000, startDate: '2026-01-01', membershipStartDate: '2026-07-01',
     nextDueDate: '2026-10-01', status: 'active', pendingAmount: 0, internalNotes: '',
     dateOfBirth: '2013-04-18', enrollmentSource: 'referral',
     paymentHistory: [
-      { id: 'p17', date: '2026-01-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' },
-      { id: 'p18', date: '2026-07-01', amount: 4000, remainingAmount: 0, paymentType: 'full', monthsCovered: 3, paymentMethod: 'cash', status: 'active', note: '' }
+      { id: 'p17', date: '2026-01-01', amount: 4000, remainingAmount: 0, paymentType: 'full', paymentMethod: 'cash', status: 'active', note: '' },
+      { id: 'p18', date: '2026-07-01', amount: 4000, remainingAmount: 0, paymentType: 'full', paymentMethod: 'cash', status: 'active', note: '' }
     ]
   },
   {
     id: 's9', name: 'Nisha Verma', phone: '9876543219', alternatePhone: '', guardianName: 'Meena Verma',
-    membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2026-03-05', membershipStartDate: '2026-08-05',
+    currentBatch: 'Evening', fees: 1500, startDate: '2026-03-05', membershipStartDate: '2026-08-05',
     nextDueDate: '2026-11-05', status: 'active', pendingAmount: 0, internalNotes: '',
     dateOfBirth: '2004-01-30', enrollmentSource: 'walk-in',
     paymentHistory: [
-      { id: 'p19', date: '2026-03-05', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'active', note: '' },
-      { id: 'p20', date: '2026-08-05', amount: 4500, remainingAmount: 0, paymentType: 'advance', monthsCovered: 3, paymentMethod: 'upi', status: 'active', note: '' }
+      { id: 'p19', date: '2026-03-05', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' },
+      { id: 'p20', date: '2026-08-05', amount: 4500, remainingAmount: 0, paymentType: 'advance', paymentMethod: 'upi', status: 'active', note: '' }
     ]
   },
   {
     id: 's10', name: 'Riya Patel', phone: '9876543212', alternatePhone: '', guardianName: 'Rajesh Patel',
-    membershipTypeId: 'annual', currentBatch: 'Morning', fees: 14000, startDate: '2026-01-15', membershipStartDate: '2026-01-15',
+    currentBatch: 'Morning', fees: 14000, startDate: '2026-01-15', membershipStartDate: '2026-01-15',
     nextDueDate: '2027-01-15', status: 'active', pendingAmount: 0, internalNotes: 'Annual plan next due Jan 2027',
     dateOfBirth: '1998-07-22', enrollmentSource: 'social-media',
     paymentHistory: [
-      { id: 'p21', date: '2026-01-15', amount: 14000, remainingAmount: 0, paymentType: 'full', monthsCovered: 12, paymentMethod: 'upi', status: 'active', note: '' }
+      { id: 'p21', date: '2026-01-15', amount: 14000, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'active', note: '' }
     ]
   },
   {
     id: 's11', name: 'Zara Khan', phone: '9876543220', alternatePhone: '9876543221', guardianName: 'Imran Khan',
-    membershipTypeId: 'monthly', currentBatch: 'Morning', fees: 1200, startDate: '2025-08-01', membershipStartDate: '2026-05-01',
+    currentBatch: 'Morning', fees: 1200, startDate: '2025-08-01', membershipStartDate: '2026-05-01',
     nextDueDate: '2026-06-01', status: 'dropout', pendingAmount: 0, internalNotes: 'Took a break may rejoin',
     dateOfBirth: '2006-03-14', enrollmentSource: 'walk-in', dropoutReason: 'Relocated to another city', dropoutDate: '2026-07-20',
     paymentHistory: [
-      { id: 'p22', date: '2025-08-01', amount: 1200, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'card', status: 'inactive', note: '' },
-      { id: 'p23', date: '2026-05-01', amount: 1200, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'inactive', note: '' }
+      { id: 'p22', date: '2025-08-01', amount: 1200, remainingAmount: 0, paymentType: 'full', paymentMethod: 'card', status: 'inactive', note: '' },
+      { id: 'p23', date: '2026-05-01', amount: 1200, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'inactive', note: '' }
     ]
   },
   {
     id: 's12', name: 'Dev Nair', phone: '9876543222', alternatePhone: '', guardianName: 'Sanjay Nair',
-    membershipTypeId: 'monthly', currentBatch: 'Evening', fees: 1500, startDate: '2025-06-01', membershipStartDate: '2026-04-01',
+    currentBatch: 'Evening', fees: 1500, startDate: '2025-06-01', membershipStartDate: '2026-04-01',
     nextDueDate: '2026-05-01', status: 'dropout', pendingAmount: 1500, internalNotes: 'Has outstanding dues before leaving',
     dateOfBirth: '2015-10-08', enrollmentSource: 'referral', dropoutReason: 'Health reasons', dropoutDate: '2026-08-10',
     paymentHistory: [
-      { id: 'p24', date: '2025-06-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'inactive', note: '' },
-      { id: 'p25', date: '2026-04-01', amount: 1500, remainingAmount: 0, paymentType: 'full', monthsCovered: 1, paymentMethod: 'upi', status: 'deleted', note: '' }
+      { id: 'p24', date: '2025-06-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'inactive', note: '' },
+      { id: 'p25', date: '2026-04-01', amount: 1500, remainingAmount: 0, paymentType: 'full', paymentMethod: 'upi', status: 'deleted', note: '' }
     ]
   }
 ]
@@ -629,7 +620,24 @@ export type AccountEntry = {
   category: string
   description: string
   amount: number         // always positive
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
+  paymentMethod?: PaymentMethod
+  vendor?: string
+  notes?: string
+}
+
+export type SaleType = 'inventory' | 'quick'
+
+export type SaleEntry = {
+  id: string
+  date: string                // YYYY-MM-DD
+  saleType: SaleType
+  itemName: string            // product name (inventory) or free-text label (quick)
+  category: string            // inventory item's category, or 'Quick Sale' for quick sales
+  inventoryItemId?: string    // inventory sales only — references InventoryItem.id
+  quantity?: number           // inventory sales only — units sold
+  unitPrice: number           // per-unit selling price (inventory) or full price (quick)
+  amount: number              // quantity × unitPrice for inventory; unitPrice for quick
+  paymentMethod: PaymentMethod
   notes?: string
 }
 
@@ -842,6 +850,51 @@ export let mockInventoryItems: InventoryItem[] = [
   },
 ]
 
+export let mockInventory: InventoryItem[] = mockInventoryItems
+
+export let mockSaleEntries: SaleEntry[] = (() => {
+  const [first, second] = mockInventory
+  return [
+    {
+      id: 'sale-1',
+      date: '2026-10-15',
+      saleType: 'inventory',
+      itemName: first?.name ?? 'Product',
+      category: first?.category ?? 'General',
+      inventoryItemId: first?.id,
+      quantity: 1,
+      unitPrice: first?.sellingPrice ?? 0,
+      amount: (first?.sellingPrice ?? 0) * 1,
+      paymentMethod: 'cash',
+      notes: '',
+    },
+    {
+      id: 'sale-2',
+      date: '2026-10-20',
+      saleType: 'quick',
+      itemName: 'Extra coaching session',
+      category: 'Quick Sale',
+      unitPrice: 500,
+      amount: 500,
+      paymentMethod: 'upi',
+      notes: 'Walk-in drop-in',
+    },
+    {
+      id: 'sale-3',
+      date: '2026-10-26',
+      saleType: 'inventory',
+      itemName: second?.name ?? 'Product',
+      category: second?.category ?? 'General',
+      inventoryItemId: second?.id,
+      quantity: 2,
+      unitPrice: second?.sellingPrice ?? 0,
+      amount: (second?.sellingPrice ?? 0) * 2,
+      paymentMethod: 'card',
+      notes: '',
+    },
+  ]
+})()
+
 // ── Custom expense categories (user-created) ──────────────
 // Mutable — appended by user in the Expenses panel
 export let mockCustomExpenseCategories: string[] = []
@@ -869,25 +922,88 @@ export let mockCustomExpenseCategories: string[] = []
   }
 })()
 
-export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed'
+/** Individual delivery outcome for a single recipient within a broadcast. */
+export type RecipientStatus = 'pending' | 'sent' | 'failed' | 'delivered' | 'read'
+
+export interface MessageRecipient {
+  studentId?: string           // FK → students.id, absent for non-student recipients
+  name: string                 // snapshot at send time
+  phone: string                // snapshot at send time
+  status: RecipientStatus      // individual delivery outcome
+  errorMessage?: string        // provider error message when status === 'failed'
+  deliveredAt?: string         // ISO timestamp — only when confirmed by provider
+  readAt?: string              // ISO timestamp — only when confirmed by provider
+}
 
 export interface MessageLog {
   id: string
-  templateId: string       // matches TEMPLATE_REGISTRY id
-  sentAt: string           // ISO datetime string
-  recipientCount: number
-  status: MessageStatus
-  triggeredBy: 'manual' | 'auto'
-  note?: string            // e.g. "Dussehra holiday", "Morning Batch"
+  templateId: string           // matches TEMPLATE_REGISTRY id
+  sentAt: string               // ISO datetime string
+  recipientCount: number       // kept for backward compat; synced with recipients.length for new records
+  recipients: MessageRecipient[] // per-recipient delivery details
+  triggerType: 'manual' | 'auto'
+  reason?: string              // e.g. "Dussehra Holiday", "Coach unwell"
 }
 
 export let mockMessageLogs: MessageLog[] = [
-  { id: 'ml-1', templateId: 'fee-reminder', sentAt: '2023-10-01T09:00:00Z', recipientCount: 12, status: 'read', triggeredBy: 'auto', note: 'Monthly reminders' },
-  { id: 'ml-2', templateId: 'fee-reminder', sentAt: '2023-09-01T09:00:00Z', recipientCount: 15, status: 'delivered', triggeredBy: 'auto', note: 'Monthly reminders' },
-  { id: 'ml-3', templateId: 'declare-holiday', sentAt: '2023-10-23T10:00:00Z', recipientCount: 145, status: 'read', triggeredBy: 'manual', note: 'Dussehra Holiday' },
-  { id: 'ml-4', templateId: 'class-cancellation', sentAt: '2023-11-05T16:00:00Z', recipientCount: 22, status: 'sent', triggeredBy: 'manual', note: 'Morning Batch - Coach ill' },
-  { id: 'ml-5', templateId: 'fee-reminder', sentAt: '2023-11-01T09:00:00Z', recipientCount: 8, status: 'read', triggeredBy: 'auto', note: 'Monthly reminders' },
-  { id: 'ml-6', templateId: 'class-cancellation', sentAt: '2023-12-10T08:00:00Z', recipientCount: 18, status: 'delivered', triggeredBy: 'manual', note: 'Evening Batch - Court Maintenance' },
+  {
+    id: 'ml-1', templateId: 'fee-reminder', sentAt: '2023-10-01T09:00:00Z',
+    recipientCount: 3, triggerType: 'auto', reason: 'Monthly reminders',
+    recipients: [
+      { studentId: 's1', name: 'Kabir Singh', phone: '9876543214', status: 'delivered', deliveredAt: '2023-10-01T09:01:00Z' },
+      { studentId: 's2', name: 'Priya Reddy', phone: '9876543215', status: 'read', deliveredAt: '2023-10-01T09:01:00Z', readAt: '2023-10-01T09:05:00Z' },
+      { studentId: 's3', name: 'Arjun Mehta', phone: '9876543216', status: 'failed', errorMessage: 'Number not on WhatsApp' },
+    ],
+  },
+  {
+    id: 'ml-2', templateId: 'fee-reminder', sentAt: '2023-09-01T09:00:00Z',
+    recipientCount: 2, triggerType: 'auto', reason: 'Monthly reminders',
+    recipients: [
+      { studentId: 's4', name: 'Sneha Nair', phone: '9876543217', status: 'delivered', deliveredAt: '2023-09-01T09:02:00Z' },
+      { studentId: 's5', name: 'Kiran Babu', phone: '9876543218', status: 'sent' },
+    ],
+  },
+  {
+    id: 'ml-3', templateId: 'declare-holiday', sentAt: '2023-10-23T10:00:00Z',
+    recipientCount: 4, triggerType: 'manual', reason: 'Dussehra Holiday',
+    recipients: [
+      { studentId: 's1', name: 'Kabir Singh', phone: '9876543214', status: 'read', deliveredAt: '2023-10-23T10:01:00Z', readAt: '2023-10-23T10:10:00Z' },
+      { studentId: 's2', name: 'Priya Reddy', phone: '9876543215', status: 'delivered', deliveredAt: '2023-10-23T10:01:00Z' },
+      { studentId: 's6', name: 'Meera Joshi', phone: '9876543219', status: 'sent' },
+      { studentId: 's7', name: 'Rahul Verma', phone: '9876543220', status: 'failed', errorMessage: 'Template not approved' },
+    ],
+  },
+  {
+    id: 'ml-4', templateId: 'class-cancellation', sentAt: '2023-11-05T16:00:00Z',
+    recipientCount: 3, triggerType: 'manual', reason: 'Coach ill',
+    recipients: [
+      { studentId: 's1', name: 'Kabir Singh', phone: '9876543214', status: 'sent' },
+      { studentId: 's3', name: 'Arjun Mehta', phone: '9876543216', status: 'sent' },
+      { studentId: 's8', name: 'Zaid Khan', phone: '9876543221', status: 'pending' },
+    ],
+  },
+  {
+    id: 'ml-5', templateId: 'fee-reminder', sentAt: '2023-11-01T09:00:00Z',
+    recipientCount: 2, triggerType: 'auto', reason: 'Monthly reminders',
+    recipients: [
+      { studentId: 's1', name: 'Kabir Singh', phone: '9876543214', status: 'read', deliveredAt: '2023-11-01T09:01:00Z', readAt: '2023-11-01T09:12:00Z' },
+      { studentId: 's5', name: 'Kiran Babu', phone: '9876543218', status: 'delivered', deliveredAt: '2023-11-01T09:02:00Z' },
+    ],
+  },
+  {
+    id: 'ml-6', templateId: 'class-cancellation', sentAt: '2023-12-10T08:00:00Z',
+    recipientCount: 2, triggerType: 'manual', reason: 'Court Maintenance',
+    recipients: [
+      { studentId: 's2', name: 'Priya Reddy', phone: '9876543215', status: 'delivered', deliveredAt: '2023-12-10T08:01:00Z' },
+      { studentId: 's4', name: 'Sneha Nair', phone: '9876543217', status: 'failed', errorMessage: 'Rate limit exceeded' },
+    ],
+  },
+  // Legacy record — no recipients array populated (backward compatibility test)
+  {
+    id: 'ml-0', templateId: 'fee-reminder', sentAt: '2023-08-01T09:00:00Z',
+    recipientCount: 15, triggerType: 'auto',
+    recipients: [],
+  },
 ]
 
 

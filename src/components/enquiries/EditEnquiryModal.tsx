@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { Enquiry } from '@/lib/mock-data'
-import { X } from 'lucide-react'
+import { X, Loader2 } from 'lucide-react'
 import { getTodayIST } from '@/lib/utils'
+import { updateEnquiry, advanceEnquiryStatus } from '@/app/(management)/enquiries/actions'
 
 type Props = {
   enquiry: Enquiry
@@ -21,10 +22,11 @@ export default function EditEnquiryModal({ enquiry, onClose, onSave }: Props) {
   const [scheduleTrial, setScheduleTrial] = useState(!!enquiry.trialDate)
   const [trialDate, setTrialDate] = useState(enquiry.trialDate || '')
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const isCompleted = enquiry.status === 'completed'
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || !phone.trim() || !guardianName.trim()) {
       setError('Please fill all required fields.')
       return
@@ -35,24 +37,32 @@ export default function EditEnquiryModal({ enquiry, onClose, onSave }: Props) {
       return
     }
 
-    // Mutate in place
-    enquiry.name = name.trim()
-    enquiry.phone = phone.trim()
-    enquiry.guardianName = guardianName.trim()
-    enquiry.notes = notes.trim() || undefined
+    setError('')
+    setIsSubmitting(true)
+    try {
+      await updateEnquiry(enquiry.id, {
+        name: name.trim(),
+        phone: phone.trim(),
+        guardianName: guardianName.trim(),
+        notes: notes.trim() || undefined,
+      })
 
-    if (!isCompleted) {
-      if (scheduleTrial) {
-        enquiry.status = 'scheduled'
-        enquiry.trialDate = trialDate
-      } else {
-        enquiry.status = 'not-scheduled'
-        enquiry.trialDate = undefined
+      // If trial schedule changed in edit modal
+      if (!isCompleted) {
+        if (scheduleTrial && trialDate && trialDate !== enquiry.trialDate) {
+          await advanceEnquiryStatus(enquiry.id, 'scheduled', trialDate)
+        } else if (!scheduleTrial && enquiry.status === 'scheduled') {
+          await advanceEnquiryStatus(enquiry.id, 'not-scheduled', '')
+        }
       }
-    }
 
-    onSave()
-    onClose()
+      onSave()
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update enquiry')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -150,7 +160,12 @@ export default function EditEnquiryModal({ enquiry, onClose, onSave }: Props) {
           <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-so-muted hover:text-so-text transition-colors">
             Cancel
           </button>
-          <button onClick={handleSave} className="px-5 py-2 text-sm font-semibold bg-so-accent text-white rounded-lg hover:opacity-90 transition-opacity shadow-sm">
+          <button 
+            disabled={isSubmitting}
+            onClick={handleSave} 
+            className="px-5 py-2 text-sm font-semibold bg-so-accent text-white rounded-lg hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Changes
           </button>
         </div>
