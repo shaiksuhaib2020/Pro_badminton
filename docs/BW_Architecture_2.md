@@ -1,826 +1,305 @@
-# EzyFee — Architecture Reference
+# Badminton Wing — Architecture Reference
 
-> **Source:** CODEBASE_AUDIT.md v1.0 (01 Oct 2026) + V1_changes_oct1.md (01 Oct 2026) + project memory reconciliation
-> **Purpose:** Carry architectural decisions, business rules, and data-model invariants across context windows. Structural details (file tree, routes, component lists, exports) live in **Structure.md**.
-> **Update rule:** Edit this file whenever an architectural decision changes, a business rule is clarified, or a new invariant is established. Do not let it drift from the code.
+> **Purpose:** Authoritative architectural decisions, domain invariants, business rules, and tenancy models across context windows.
+> **Companions:** Structural routes, component layouts, and migration tracker live in `BW_Structure_2.md`. Database definitions live in `database.types.ts` and `database_schema.sql`.
 
 ---
 
 ## 1. System Overview
 
-EzyFee (repo name: `pro-badminton`) is a **coaching academy management SaaS** purpose-built for badminton academies in India. It manages the full student lifecycle — enrollment, fee collection, attendance, and communications — from a single-pane dashboard. The current architecture supports a **single academy with optional multi-branch** within it; it is not yet a multi-tenant platform. Primary users are the academy owner, manager, coach, accountant, and receptionist, each with a defined role. Authentication is live on Supabase; **six features are now wired to Supabase** (Membership Types, Students, Batches, Attendance, Enquiries); remaining features use in-memory mock state pending migration. The canonical product name throughout the UI and all new code is **EzyFee**.
+**Badminton Wing** is a dedicated **coaching academy management SaaS** tailored for badminton academies in India. It manages the full academy lifecycle: student enrollment, fee collection, batch scheduling, attendance marking, court membership plans, inventory stock tracking, and sales/expense ledgers.
+
+### Product Scope & Platform Strategy
+- **Desktop Web Application (Current Scope):** Exclusively designed for the **Owner** and **Manager**. It serves as the single administrative command center for all business operations, financials, staff, and configurations.
+- **Coach Mobile Application (Post-Deployment Scope):** Coaches do not use the desktop dashboard. A separate, lightweight mobile experience will be provided specifically for court-side operations (batch overview and attendance marking).
+- **Receptionist & Accountant:** Secondary roles with strict, scoped permissions enforced at both the database RLS layer and server action authorization checks.
 
 ---
 
-## 2. Stack and Constraints
+## 2. Stack & Immutable Constraints
 
-| Layer | Choice | Constraint / Note |
+| Layer | Technology | Hard Constraints |
 |---|---|---|
-| **Framework** | Next.js 16.3.1 (App Router) | App Router only — no Pages directory. All new routes go under `src/app/`. |
-| **Language** | TypeScript 5 (strict mode) | No `any` in new code. |
-| **Runtime** | React 19.2.8 | Server Components are available and must be the default for new pages. |
-| **Styling** | Tailwind CSS v4 + PostCSS | `so-*` design tokens from `globals.css` only. No inline styles, no CSS modules. |
-| **Icons** | Lucide React ^1.34.0 | Exclusively Lucide. Convention: `w-5 h-5 shrink-0 strokeWidth={1.75}`. |
-| **Charts** | Recharts ^3.10.1 | Dashboard and Reports only. No charts inside modals or list views. |
-| **Auth** | Supabase Auth (email/password) | Supabase SSR for cookie-based sessions. Browser client (`client.ts`) for the login page only. |
-| **Database** | PostgreSQL via Supabase | Full schema in `badmintonw_schema.sql`. Connected for Auth + six migrated features. RLS enforced on all wired tables. |
-| **Date handling** | date-fns ^4.4.0 | All date arithmetic via date-fns. All dates stored as `YYYY-MM-DD` strings. Timezone: `Asia/Kolkata` (IST) throughout. |
-| **Build (dev)** | Turbopack (`next dev --turbopack`) | Dev only. Production uses standard Next.js build. |
-| **Hosting (target)** | Netlify + Supabase free tier | Not yet deployed. Local dev server only. |
+| **Framework** | Next.js 16.3.1 (App Router) | All routes under `src/app/(management)/` or `src/app/(auth)/`. No Pages router. |
+| **Language** | TypeScript 5 (Strict Mode) | No `any`. Rely on generated types from `src/lib/supabase/database.types.ts`. |
+| **Runtime** | React 19.2.8 | Async Server Components by default for pages; Client Components (`'use client'`) for interactive views. |
+| **Styling** | Tailwind CSS v4 | Strict adherence to `so-*` design tokens defined in `docs/UIPatterns.md`. No inline styles. |
+| **Icons** | Lucide React | Sole icon library. Standard size: `w-5 h-5 shrink-0 strokeWidth={1.75}` (or `w-4 h-4` for compact UI). |
+| **Charts** | Recharts ^3.10.1 | Allowed on `/dashboard` and `/reports` only. Never inside modals or table rows. |
+| **Auth & DB** | Supabase (PostgreSQL 15+) | Multi-tenant RLS on every table. SSR cookie authentication (`@supabase/ssr`). |
+| **Timezone & Dates** | IST (`Asia/Kolkata`), date-fns | All dates stored as `YYYY-MM-DD` strings. Never store raw JavaScript `Date` objects in state or DB. |
+| **Currency** | INR (Paise in DB, Rupees in UI) | **DB stores paise (INTEGER)**. App displays whole Rupees (`₹1,500`). Multiply by 100 on write, divide by 100 on read. |
 
 ---
 
-## 3. Layering and Boundaries
+## 3. Tenancy, Auth & Role-Based Access Control
 
-### 3.1 Request → Render Pipeline
+### 3.1 Multi-Tenant SaaS Architecture
+1. **Tenant Isolation:** Every table in Supabase contains an `academy_id UUID NOT NULL REFERENCES academies(id) ON DELETE CASCADE`.
+2. **Row Level Security (RLS):** All data access is filtered through PostgreSQL RLS functions (`get_my_academy_id()` and `get_my_role()`). No academy can read or write another academy's records under any circumstance.
+3. **Branching Model:** 
+   - **Current State:** Single-branch SaaS module per academy.
+   - **Target State:** Multi-branch scaling is built into the schema (`branch_id` nullable FK), but the UI multi-branch toggle is intentionally deferred until post-deployment.
 
+### 3.2 Dual Auth Guard Pipeline
 ```
 HTTP Request
-  → proxy.ts (Middleware)
-      Session refresh + auth redirect
-    → (management)/layout.tsx  [Server Component — auth guard]
-        Renders Sidebar + TopBar shell
-      → page.tsx  [Server Component — data fetch via lib/queries/ OR Supabase direct]
-          Passes data as props
-        → <FeatureView>  ['use client' — all interactivity + state]
-            → <FeatureModal>  ['use client' — CRUD, mutations via server actions]
+  ├── 1. Middleware Guard (src/proxy.ts)
+  │      Refreshes Supabase session cookie. Redirects unauthenticated requests to /login.
+  └── 2. Layout Server Guard (src/app/(management)/layout.tsx)
+         Verifies session server-side with supabase.auth.getUser().
+         Renders Sidebar + TopBar administrative shell.
 ```
+In server actions and queries, **`getServerSession()`** (`src/lib/supabase/auth-context.ts`) resolves `{ supabase, user, academyId, role }` and verifies tenant identity before business queries execute.
 
-**Rules:**
-- `(management)/layout.tsx` is the **only** auth guard. Do not add auth checks inside page files.
-- All page.tsx files for migrated features are **async Server Components** that call `lib/queries/<feature>.ts` and pass data down as props.
-- **Server Actions** (`actions.ts` per feature, under the route directory) handle all write operations. Modals call server actions — never call Supabase from a client component.
-- **Query functions** (`src/lib/queries/<feature>.ts`) handle reads — called from Server Components only.
-- `getServerSession()` from `src/lib/auth-context.ts` is the standard auth + academy_id + role resolver used in all query functions and server actions.
+### 3.3 Role Permission Matrix
+Five staff roles exist in the database (`owner`, `manager`, `coach`, `accountant`, `receptionist`):
 
-### 3.2 Feature Folder Rules
-
-```
-src/app/(management)/<feature>/
-  page.tsx              — Server Component: calls lib/queries/, passes data as props
-  loading.tsx           — Skeleton loader (required for every route)
-  error.tsx             — Error boundary (required for data-fetching routes)
-  actions.ts            — Server actions for write operations
-  _components/          — Client view components local to this feature only
-    <Feature>View.tsx   — 'use client' — interactive list/table; receives data as props
-    <Feature>Detail.tsx — 'use client' — interactive detail view
-
-src/components/<domain>/
-  — Shared modals and UI used across multiple features
-  — Must NOT import from app/ routes
-
-src/lib/
-  auth-context.ts           — getServerSession() — session + academy_id + role; server-only
-  queries/<feature>.ts      — Read queries, server-only; called from Server Component pages
-  utils.ts                  — Pure formatting/date helpers + enum mappers; no side effects
-  mock-data.ts              — TEMPORARY: types + seed state for un-migrated features
-  supabase/                 — Supabase client factories
-```
-
-**Import direction:** `app/` → `components/` → `lib/`. Never reverse. `lib/` must not import from `components/` or `app/`.
-
-### 3.3 Logic Placement (Current → Target)
-
-| Logic Type | Current Location | Target Location |
-|---|---|---|
-| Fee calculation | Server actions (`actions.ts`) for migrated features; inline in modal components for un-migrated | Server action (`actions.ts`) — ✅ in progress |
-| Status derivation | DB trigger `tr_students_compute_status` (fires on INSERT / next_due_date change) | DB trigger (✅ live) + pg_cron nightly job (Pro tier) |
-| Date arithmetic | `utils.ts` (shared), called from server actions | `utils.ts` — ✅ |
-| Form validation | Inline in modals (client-only) | Zod schema in server action + client mirror |
-| Auth check | Middleware + server layout + `getServerSession()` in queries/actions | Middleware + server layout (no change) |
-| Permission check | `getServerSession()` role check in server actions | RLS on all tables + role check in server action — ✅ in progress |
-| Enum mapping | `toAppEnum()`/`toDbEnum()` in `utils.ts` | `utils.ts` — ✅ |
-
----
-
-## 4. Data Model
-
-### 4.1 Entity Relationships
-
-```
-Settings (1 per academy)
-  ├── Branch (1:N)
-  ├── StaffMember (1:N) → assigned to Branch
-  ├── MembershipType (1:N)              ← ✅ Supabase-wired
-  ├── CourtPlan (1:N)
-  └── Batch (1:N) → belongs to Branch   ← ✅ Supabase-wired
-
-Student                                  ← ✅ Supabase-wired
-  ├── student_payments: PaymentEntry[]   ← ✅ Supabase-wired (normalized table)
-  ├── MembershipType (N:1)
-  └── Batch (N:1) — stored as batch_id UUID FK in DB; mock-data.ts still uses name string
-
-Enquiry                                  ← ✅ Supabase-wired
-  └── (flat — no embedded arrays)
-
-AttendanceRecord                         ← ✅ Supabase-wired
-  ├── Batch (N:1)
-  └── records: { studentId → 'present' | 'absent' }  (JSONB map)
-
-CourtMember
-  ├── paymentHistory: CourtPaymentEntry[]  (1:N — will normalize)
-  ├── checkInHistory: CheckIn[]            (1:N — will normalize)
-  └── CourtPlan (N:1)
-
-AccountEntry  (expenses and income — two separate arrays currently, one table with entry_type in DB)
-InventoryItem
-Event
-MessageLog
-```
-
-### 4.2 Type Definitions
-
-#### `Student`
-```typescript
-type Student = {
-  id: string
-  name: string
-  phone: string
-  alternatePhone: string
-  guardianName: string
-  membershipTypeId: string          // FK → MembershipType.id
-  currentBatch: string              // Mock: batch name string. DB: batch_id UUID FK → batches.id
-  fees: number                      // Override fee — may differ from MembershipType.price
-  startDate: string                 // Original enrollment date (YYYY-MM-DD) — IMMUTABLE
-  membershipStartDate: string       // Current period start (YYYY-MM-DD) — mutable on renewal
-  nextDueDate: string               // Next payment due date (YYYY-MM-DD)
-  status: StudentStatus
-  dateOfBirth?: string              // YYYY-MM-DD
-  address?: string                  // Optional mailing/contact address
-  email?: string                    // Optional contact email
-  enrollmentSource?: EnrollmentSource
-  dropoutReason?: string
-  dropoutDate?: string              // YYYY-MM-DD
-  pendingAmount: number             // Outstanding partial payment balance — always ≥ 0
-  internalNotes: string
-  paymentHistory: PaymentEntry[]
-}
-```
-
-#### `PaymentEntry`
-```typescript
-type PaymentEntry = {
-  id: string
-  date: string                      // YYYY-MM-DD
-  amount: number                    // Amount actually collected (not total fee if partial)
-  remainingAmount: number           // Amount still owed from this entry
-  paymentType: 'full' | 'partial' | 'advance'
-  monthsCovered: number             // Number of membership periods this entry covers
-  paymentMethod: PaymentMethod
-  status: 'active' | 'inactive' | 'deleted'
-  note: string
-}
-```
-
-#### `MembershipType`
-```typescript
-type MembershipType = {
-  id: string                        // UUID (Supabase) or e.g. 'monthly', 'quarterly' (mock)
-  name: string
-  durationType: 'months' | 'days'
-  duration: number                  // e.g., 1, 3, 12
-  price: number                     // Base price in ₹
-}
-```
-
-#### `Batch`
-```typescript
-interface Batch {
-  id: string
-  name: string
-  branchId: string
-  days: string[]                    // e.g., ['Monday', 'Wednesday', 'Friday']
-  fees?: number                     // Per-batch fee override — takes precedence over MembershipType.price
-  description?: string              // e.g., '6:00 AM – 8:00 AM'
-}
-```
-
-#### `AttendanceRecord`
-```typescript
-type AttendanceRecord = {
-  id: string                        // Supabase UUID (was compound `${batchId}-${YYYY-MM-DD}` in mock)
-  batchId: string
-  date: string                      // YYYY-MM-DD
-  records: Record<string, 'present' | 'absent'>  // studentId → status
-}
-```
-
-#### `Enquiry`
-```typescript
-type Enquiry = {
-  id: string
-  name: string
-  phone: string
-  guardianName: string
-  notes?: string
-  status: 'not-scheduled' | 'scheduled' | 'completed'  // app values (DB uses underscores)
-  trialDate?: string                // YYYY-MM-DD; required when status is 'scheduled' or 'completed'
-  createdAt: string                 // ISO timestamp
-  updatedAt?: string                // ISO timestamp
-}
-```
-
-#### `CourtMember`
-```typescript
-type CourtMember = {
-  id: string
-  name: string
-  phone: string
-  planId?: string                   // FK → CourtPlan.id
-  planType: 'monthly' | 'sessions'
-  joiningDate: string               // YYYY-MM-DD
-  membershipStartDate?: string      // Monthly plans only (YYYY-MM-DD)
-  nextDueDate?: string              // Monthly plans only (YYYY-MM-DD)
-  totalSessions?: number            // Session plans only
-  remainingSessions?: number        // Session plans only
-  status: CourtMemberStatus
-  amountPaid: number
-  pendingAmount?: number
-  notes?: string
-  paymentHistory: CourtPaymentEntry[]
-  checkInHistory: Array<{ id: string; date: string; sessionsAfter: number }>
-}
-```
-
-#### `CourtPlan`
-```typescript
-type CourtPlan = {
-  id: string
-  name: string                      // e.g., 'Monthly Unlimited', 'Session Pack — 10'
-  planType: 'monthly' | 'sessions'
-  price: number
-  durationMonths?: number           // Monthly plans only
-  totalSessions?: number            // Session plans only
-  validityDays?: number             // Session pack expiry — defined but NOT currently enforced
-}
-```
-
-#### `CourtPaymentEntry`
-```typescript
-type CourtPaymentEntry = {
-  id: string
-  date: string                      // YYYY-MM-DD
-  amount: number
-  paymentMethod: PaymentMethod
-  entryType: 'new' | 'renewal' | 'session-topup'
-  status: 'active' | 'deleted'
-  note?: string
-}
-```
-
-#### `AccountEntry`
-```typescript
-type AccountEntry = {
-  id: string
-  date: string                      // YYYY-MM-DD
-  category: string                  // From EXPENSE_CATEGORIES or INCOME_CATEGORIES
-  description: string
-  amount: number                    // Always positive — expense vs income = which array it's in
-  paymentMethod: PaymentMethod
-  notes?: string
-}
-```
-
-#### `InventoryItem`
-```typescript
-type InventoryItem = {
-  id: string
-  sku: string
-  name: string
-  category: string                  // From BUILTIN_INVENTORY_CATEGORIES or user-created
-  description: string
-  unit: string                      // e.g., 'tube', 'piece', 'pair'
-  quantity: number
-  price: number                     // Purchase price in ₹
-  sellingPrice: number              // Selling price in ₹
-  icon?: string
-}
-```
-
-#### `Settings`
-```typescript
-type Settings = {
-  courtMembershipEnabled: boolean   // DEFAULTS TO FALSE — gates the entire court segment
-  courtPlans: CourtPlan[]
-  courtName: string
-  tenantPhone?: string
-  tenantAddress?: string
-  tenantTimezone?: string
-  multiBranchEnabled: boolean
-  branches: Branch[]
-  staffMembers: StaffMember[]
-  membershipTypes: MembershipType[]
-  batches: string[]                 // Batch name strings (not Batch objects — inconsistency)
-  feeReminderEnabled: boolean
-  feeAckEnabled: boolean
-  birthdayWishEnabled: boolean
-}
-```
-
-### 4.3 Enums
-
-```typescript
-type StudentStatus       = 'active' | 'due-soon' | 'expired' | 'inactive' | 'dropout'
-// ⚠ LOCKED — never use 'on-hold' or 'off-court'
-// DB note: student_status uses 'due-soon' (with hyphen) as the actual PG enum label.
-
-type CourtMemberStatus   = 'active' | 'due-soon' | 'expired' | 'sessions-low' | 'exhausted' | 'inactive' | 'dropout'
-// DB: uses underscores (due_soon, sessions_low). Use toAppEnum/toDbEnum when reading/writing.
-
-type EnquiryStatus       = 'not-scheduled' | 'scheduled' | 'completed'
-// DB: uses underscores (not_scheduled). Use toAppEnum/toDbEnum.
-
-type PaymentMethod       = 'cash' | 'upi' | 'card' | 'other'
-type PaymentType         = 'full' | 'partial' | 'advance'
-type StaffRole           = 'owner' | 'manager' | 'coach' | 'accountant' | 'receptionist'
-type EnrollmentSource    = 'walk-in' | 'referral' | 'social-media' | 'other'
-type CourtPayEntryType   = 'new' | 'renewal' | 'session-topup'
-// DB: uses session_topup (underscore). Use toDbEnum when inserting.
-type PlanType            = 'monthly' | 'sessions'
-```
-
-### 4.4 Money and Date Representation
-
-- **Currency:** `number` in Indian Rupees (no paise/decimal usage in app layer). Always formatted via `formatCurrency()` → `₹1,500` using `Intl.NumberFormat('en-IN')`. **DB stores paise (INTEGER)** — multiply by 100 before insert, divide by 100 after select in all query and action files.
-- **Dates:** Always `YYYY-MM-DD` strings in state and storage. Never raw `Date` objects in state. `date-fns` for all arithmetic. IST enforced via `getTodayIST()`.
-- **Pending amount:** Represents outstanding balance from a partial payment. Separate from "due" (where a renewal period has begun but no payment recorded at all). Kept in sync by DB trigger `tr_sync_pending_amount_after_payment`.
-
-### 4.5 Constants
-
-```typescript
-EXPENSE_CATEGORIES = [
-  'Shuttlecocks', 'Equipment & Gear', 'Court Rent', 'Coaching Staff',
-  'Utilities', 'Maintenance & Repairs', 'Marketing', 'Tournament Expenses', 'Miscellaneous'
-]
-
-INCOME_CATEGORIES = [
-  'Court Rental', 'Membership Fees', 'Equipment Sales', 'Shuttle Sales',
-  'Racket Restringing', 'Merchandise', 'Sponsorship', 'Tournament Entry', 'Other'
-]
-
-BUILTIN_INVENTORY_CATEGORIES = [
-  'Racquet Sports', 'Footwear', 'Apparel', 'Accessories / Miscellaneous'
-]
-
-UNIT_PRESETS = ['piece', 'tube', 'pair', 'roll', 'box', 'set']
-```
-
----
-
-## 5. Data Access Layer
-
-### 5.1 Current State
-
-**Migrated features** read from and write to Supabase. Their pages are async Server Components; mutations go through server actions. Mock arrays for these features are preserved in `mock-data.ts` only to avoid breaking still-unmigrated consumers (e.g. Dashboard, Reports).
-
-| Feature | Status |
-|---|---|
-| Authentication | ✅ Supabase Auth |
-| Membership Types (Settings) | ✅ Supabase |
-| Students + Student Payments | ✅ Supabase |
-| Batches | ✅ Supabase |
-| Attendance | ✅ Supabase |
-| Enquiries | ✅ Supabase |
-| Dashboard | ⚠ Mock (reads mockStudents, mockBatches, mockAttendance) |
-| Court Members | ⚠ Mock |
-| Fee Transactions | ⚠ Mock |
-| Accounts | ⚠ Mock |
-| Inventory | ⚠ Mock |
-| Reports | ⚠ Mock |
-| Communications | ⚠ Mock + Stub |
-
-**Session + tenancy helper:** `getServerSession()` in `src/lib/auth-context.ts` — used in every query function and server action to get `{ user, academyId, role }` and redirect to `/login` if unauthenticated.
-
-### 5.2 Data Layer Files (Live)
-
-```
-src/lib/
-  auth-context.ts              — getServerSession(): { user, academyId, role }
-  queries/
-    settings.ts                — getMembershipTypes()
-    students.ts                — getStudents(), getStudentById(id), getStudentsByBatch(batchId)
-    batches.ts                 — getBatches(), getBatchById(id)
-    attendance.ts              — getAttendanceByBatch(batchId), getAttendanceByStudent(studentId, batchId)
-    enquiries.ts               — getEnquiries()
-
-src/app/(management)/
-  settings/actions.ts          — createMembershipType, updateMembershipType, deleteMembershipType
-  students/actions.ts          — createStudent, renewStudent, dropoutStudent, reEnrollStudent,
-                                 deactivateStudent, activateStudent, collectRemaining,
-                                 voidPayment, updateStudent, deleteStudentPermanently
-  batches/actions.ts           — createBatch, updateBatch, deleteBatch, getBatchesAction
-  batches/[id]/actions.ts      — saveAttendance
-  enquiries/actions.ts         — createEnquiry, updateEnquiry, advanceEnquiryStatus, deleteEnquiry
-```
-
-**Data access rules:**
-- All writes → server actions. Never call Supabase from a client component.
-- All reads for initial render → query functions in `lib/queries/`, called from Server Component pages.
-- Client-side optimistic updates acceptable for UX; must reconcile with server state.
-- After any mutation, call `revalidatePath()` for the affected route.
-- Always use the server Supabase client (`lib/supabase/server.ts`) in queries and actions.
-- RLS is the final authorization layer. Server actions also verify role via `getServerSession()`.
-
----
-
-## 6. Auth, Authorization and Tenancy
-
-### 6.1 Login Flow
-
-```
-GET /protected-route
-  → proxy.ts (Middleware)
-      supabase.auth.getUser()
-      No session → redirect /login
-      Has session → continue
-
-/login page (CSR)
-  supabase.auth.signInWithPassword()
-  Success → router.push('/dashboard')
-
-(management)/layout.tsx (SSR)
-  supabase.auth.getUser()   ← second guard
-  Not authenticated → redirect('/login')
-  Authenticated → render Sidebar + TopBar + children
-
-lib/auth-context.ts — getServerSession()
-  Used in every query function and server action:
-  Calls supabase.auth.getUser(), looks up staff_members for academy_id + role
-  No session or no staff record → redirect('/login')
-```
-
-**Double guard** (both must remain): Middleware (`proxy.ts`) + Server Layout (`(management)/layout.tsx`).
-
-### 6.2 Middleware — `src/proxy.ts`
-
-- Runs on every request
-- Refreshes Supabase session cookie
-- Redirect rules:
-  - `/` → `/dashboard` (session) or `/login` (no session)
-  - `/login` with valid session → `/dashboard`
-  - Any protected route without session → `/login`
-
-### 6.3 Roles and Permission Matrix
-
-**Five roles:** `owner | manager | coach | accountant | receptionist`
-
-| Module | Owner | Manager | Coach | Accountant | Receptionist |
+| Module | Owner | Manager | Coach (Mobile) | Accountant | Receptionist |
 |---|---|---|---|---|---|
-| Dashboard | full | full | view | view | view |
-| Students | full | full | view | view | partial |
-| Batches | full | full | view | none | none |
-| Attendance | full | full | mark | none | none |
-| Fee Transactions | full | full | none | full | collect |
-| Accounts | full | view | none | full | none |
-| Inventory | full | full | none | view | none |
-| Court Members | full | full | none | view | collect |
-| Events | full | full | view | none | view |
-| Settings | full | partial | none | none | none |
-| Staff Management | full | view | none | none | none |
-| Enquiries | full | full | view | view | partial |
-
-**Current status:** RLS policies are live for migrated tables. Role checks run inside server actions via `getServerSession().role`. UI-level role gating is not yet applied (all authenticated users see all UI elements).
-
-### 6.4 Tenancy
-
-**Current:** Single academy per deployment. `getServerSession()` returns the `academyId` scoped to the authenticated staff member. All queries and actions pass `academyId` to Supabase; RLS enforces this at the DB layer.
-
-**Target:** Full multi-tenant when expanded to SaaS. Architecture is already laid out — `academy_id` FK on all tables, RLS in place.
+| **Dashboard** | Full | Full | View | View | View |
+| **Students** | Full | Full | View | View | Partial (Add/Edit) |
+| **Batches** | Full | Full | View | None | None |
+| **Attendance** | Full | Full | Mark | None | None |
+| **Fee Transactions** | Full | Full | None | Full | Collect |
+| **Accounts & Sales** | Full | View | None | Full | None |
+| **Inventory** | Full | Full | None | View | None |
+| **Court Members** | Full | Full | None | View | Collect |
+| **Settings** | Full | Partial | None | None | None |
+| **Enquiries** | Full | Full | View | View | Partial (Add/Edit) |
 
 ---
 
-## 7. Business Rules and Domain Logic
-
-> **These rules are locked.** Do not change them without explicit confirmation.
-
-### 7.1 Student Lifecycle
-
-**State machine:**
-```
-[*] → active (Enroll via AddStudentModal)
-active → due-soon   (DB trigger when nextDueDate ≤ today + 7 days)
-due-soon → expired  (DB trigger when nextDueDate < today)
-active/due-soon/expired → dropout  (DropoutConfirmModal → dropoutStudent action)
-dropout → active    (ReEnrollModal ONLY → reEnrollStudent action)
-active/due-soon/expired → inactive (deactivateStudent action)
-inactive → active   (activateStudent action)
-active/due-soon/expired → active (renewStudent action — DB trigger then recomputes)
-```
-
-**Status auto-computation:** DB trigger `tr_students_compute_status` fires BEFORE INSERT or when `next_due_date` changes. It derives status from `next_due_date` in IST, skipping rows with `status IN ('dropout', 'inactive')`. Server actions do NOT need to manually set status for active/due-soon/expired — the trigger handles it. A pg_cron nightly job (Pro tier) sweeps all non-dropout/non-inactive students daily.
-
-**Enrollment logic (AddStudentModal → createStudent action):**
-1. Duplicate check by phone within academy before creating
-2. `nextDueDate = startDate + membershipType.duration` (in months)
-3. Optional discount: flat (₹) or percentage (%)
-4. Partial payment: `pendingAmount = totalFee − amountPaying`
-5. Creates `PaymentEntry` with `paymentType: 'full' | 'partial'`
-6. `startDate` is set here and is **immutable** (DB trigger enforces this)
-
-**Renewal logic (RenewModal → renewStudent action):**
-1. `membershipStartDate` = previous `nextDueDate` (chain — no gaps or overlaps)
-2. `nextDueDate` = new `membershipStartDate + (duration × periods)`
-3. Supports partial payment and optional batch switch
-4. Creates new `PaymentEntry`; does not touch existing entries
-5. **File:** `src/components/coaching/RenewModal.tsx`
-
-**Dropout logic (DropoutConfirmModal → dropoutStudent action):**
-1. Captures dropout reason (free text)
-2. Sets `status: 'dropout'`, `dropoutReason`, `dropoutDate = today`
-3. Sets all active payment entries to `status: 'inactive'`
-4. **File:** `src/components/students/DropoutConfirmModal.tsx`
-
-**Re-enrollment logic (ReEnrollModal → reEnrollStudent action):**
-1. Fresh membership: new type, batch, start date
-2. Previous `paymentHistory` preserved
-3. `pendingAmount` reset to 0 (or partial if applicable)
-4. `startDate` updates to the new enrollment date (this is a new membership, not a renewal)
-5. **File:** `src/components/students/ReEnrollModal.tsx`
-
-### 7.2 Enquiry Lifecycle
+## 4. Layering & Request Pipeline
 
 ```
-[*] → not-scheduled  (AddEnquiryModal → createEnquiry)
-not-scheduled → scheduled   (advanceEnquiryStatus — sets trial_date)
-scheduled → completed       (advanceEnquiryStatus — marks trial attended)
-any → DELETE                (deleteEnquiry — hard delete; lead lost)
-completed → Enroll          (opens AddStudentModal pre-filled with name/phone/guardian)
+Page Request
+  → page.tsx [Server Component]
+      Fetches data via src/lib/queries/<feature>.ts (Server-only)
+      Passes clean props to Client View
+    → _components/<Feature>View.tsx ['use client']
+        Manages UI state, search/filters, and modal visibility
+      → _components/<Modal>.tsx ['use client']
+          Triggers mutation via Server Actions (actions.ts)
+        → actions.ts ['use server']
+            1. Calls getServerSession() (tenancy + auth check)
+            2. Validates inputs & converts currency (Rupees → Paise)
+            3. Executes Supabase mutation via server client
+            4. Calls revalidatePath() to purge Next.js router cache
 ```
 
-**DB constraint:** `trial_date` MUST be NULL when `status = 'not_scheduled'`; MUST be NOT NULL when `status IN ('scheduled', 'completed')`.
+**Cardinal Rules:**
+- `lib/` must never import from `components/` or `app/`.
+- Migrated Client Components **never** read or write Supabase business records directly. Business mutations go through `actions.ts`.
+- Every mutation must call `revalidatePath('/<route>')` upon completion.
 
-### 7.3 Court Member Lifecycle
+### 4.1 Application models and data-source boundaries
 
-**Monthly plan states:** `active → due-soon → expired` (same as coaching)
-**Session plan states:** `active → sessions-low (≤2) → exhausted (0)`
-
-**Session check-in (Log In button — Members page only):**
-1. Deduct `remainingSessions` by 1
-2. Append `{ id, date, sessionsAfter }` to `checkInHistory`
-3. Recompute status: `0 → exhausted`, `≤2 → sessions-low`, else `active`
-4. Show 5-second undo strip — reverts only if member has a check-in logged today
-5. **Check In is an operational action, not a fee action.** It lives on Members page. Fee actions (Renew, Buy Sessions, Collect) live only in Fee Transactions.
-
-**`validityDays`** on CourtPlan is defined but **not enforced** — session packs do not currently expire.
-
-### 7.4 Fee Calculation
-
-```
-baseFee = membershipType.price
-discount = discountType === '₹'
-  ? discountValue
-  : baseFee × discountValue / 100
-finalFee = Math.max(0, baseFee − discount)
-totalForRenewal = finalFee × periods
-
-// Partial payment
-if (amountPaying < totalForRenewal):
-  paymentType = 'partial'
-  pendingAmount = totalForRenewal − amountPaying
-  PaymentEntry.remainingAmount = totalForRenewal − amountPaying
-```
-
-**Fee collection events:**
-
-| Event | Action |
-|---|---|
-| New enrollment | Creates first `PaymentEntry`, sets `nextDueDate`, sets `pendingAmount` |
-| Renewal | Creates new `PaymentEntry`, chains `nextDueDate`, updates `pendingAmount` |
-| Collect remaining | Collects `pendingAmount`, sets to 0, `pendingAmount = 0` |
-| Bulk collect (Pending tab) | Iterates checked students, creates full `PaymentEntry` for each |
-| Void | Sets `PaymentEntry.status = 'deleted'` — **soft void only, no hard deletes** |
-
-**Files:** `AddStudentModal.tsx`, `RenewModal.tsx`, `CollectRemainingModal.tsx`, `transactions/page.tsx`
-
-### 7.5 Dashboard Revenue Calculation
-
-```typescript
-// Collected — date-filtered
-collectedAmount = students
-  .flatMap(s => s.paymentHistory)
-  .filter(p => p.status !== 'deleted' && isWithinInterval(p.date, dateRange))
-  .reduce((sum, p) => sum + p.amount, 0)
-
-// Due — NOT date-filtered (all outstanding dues across the academy)
-dueAmount = students
-  .filter(s => s.status !== 'dropout')
-  .reduce((sum, s) => {
-    if (s.pendingAmount > 0) return sum + s.pendingAmount
-    if (s.status === 'expired' || s.status === 'due-soon') return sum + s.fees
-    return sum
-  }, 0)
-```
-
-**FeesSegment Report fix (V1):** Batch Revenue `collected` is now filtered by `isWithinInterval(parseISO(p.date), { start, end })` for the selected month only. Percentage is capped at 100% to guard against advance payments. Both Batch Revenue and Payment Mode share a single `monthOffset` navigator.
-
-**File:** `src/app/(management)/dashboard/page.tsx`, `src/app/(management)/reports/_components/FeesSegment.tsx`
-
-### 7.6 Attendance Logic
-
-**Recording:**
-1. Staff selects date + batch in Batch Detail → Attendance → Marking mode
-2. Each student toggled `present` / `absent`
-3. Save calls `saveAttendance` server action — upserts with `{ onConflict: 'batch_id,date' }`
-4. No partial updates — saving overwrites the entire record for that date+batch
-
-**Insight calculations:**
-- Per-student %: `(days present / days with any record) × 100`
-- Batch average %: `(total present / total marks) × 100`
-- Risk classification thresholds: configurable in Reports (50/60/70/80 or custom)
-
-**File:** `src/app/(management)/batches/[id]/_components/BatchDetail.tsx`
-
-### 7.7 Court Membership Feature Gate
-
-`mockSettings.courtMembershipEnabled` **defaults to `false`**. When `false`:
-- Court tab is hidden on `/students` (Members page)
-- Court segment is hidden on `/transactions`
-- The Members page and Fee Transactions look exactly as they did before court was introduced
-
-Toggle lives in Settings → Academy section.
-
-### 7.8 Inventory Stock Classification
-
-| Quantity | Classification | Color |
-|---|---|---|
-| `0` | Out of Stock | Red |
-| `1–3` | Critical | Red |
-| `4–7` | Low | Yellow |
-| `>7` | Adequate | Green |
-
-**File:** `src/app/(management)/inventory/page.tsx`
-
-### 7.9 Fee Action Placement Rule (Locked)
-
-- **Fee Transactions page:** Renew, Collect Remaining, Buy Sessions, Void — all fee actions
-- **Members page:** Directory, status management, Check In (session decrement) only
-- **Never** place fee actions (Renew, Collect, Buy Sessions) on the Members page
+- Application models live under `src/lib/types/` by feature and use explicit `import type`. They retain rupee values, camelCase fields, optional legacy timestamps, and derived statuses. Generated Supabase row types remain the database-boundary types; they are not interchangeable with application models.
+- Legitimate built-in categories and the permission display matrix live under `src/lib/constants/`. The matrix is a UI reference; authorization still depends on server checks and database RLS. Pure court label/count helpers live in `src/lib/court-utils.ts`.
+- `src/lib/mock-data.ts` contains sample records and in-memory demo state only. Migrated business modules must not import it. ESLint enforces that restriction; all query modules import `server-only` to prevent accidental client use.
+- Supabase Auth is also used in the browser for Login and Sidebar sign-out. Business-record reads/writes retain the server boundary described above.
+- Settings currently persists academy/staff/event/communication edits only in memory. Reports, Court Memberships, Communications and shell feature/branch settings also retain explicit demo dependencies. The dashboard reads live Supabase business data, with an isolated monthly accounts Demo card. An async page or an unused query helper does not establish migration. The current per-route inventory is in `BW_Structure_2.md`.
+- Empty database results stay empty. StudentList does not substitute sample batches; ExpenseModal requires custom categories plus a persistence callback and updates its list only after successful persistence.
 
 ---
 
-## 8. Shared Modules Index
+## 5. Domain Logic & Business Rules
 
-| Name | Path | Purpose |
-|---|---|---|
-| `formatCurrency` | `src/lib/utils.ts` | Format number as ₹1,500 (en-IN locale) |
-| `formatDate` | `src/lib/utils.ts` | Format Date/string as DD/MM/YYYY in IST |
-| `formatTime` | `src/lib/utils.ts` | Convert "06:00" → "6:00 AM" |
-| `formatSlot` | `src/lib/utils.ts` | Combine two times: "6:00 AM – 7:00 AM" |
-| `getTodayIST` | `src/lib/utils.ts` | Today as YYYY-MM-DD in IST |
-| `getDateDaysAgoIST` | `src/lib/utils.ts` | N days ago as YYYY-MM-DD in IST |
-| `getFirstDayOfMonthIST` | `src/lib/utils.ts` | First day of current month as YYYY-MM-DD |
-| `calcAge` | `src/lib/utils.ts` | Compute age from DOB string (YYYY-MM-DD) |
-| `toAppEnum` | `src/lib/utils.ts` | Convert DB underscore value to app hyphen value (e.g. `due_soon` → `due-soon`) |
-| `toDbEnum` | `src/lib/utils.ts` | Convert app hyphen value to DB underscore value (e.g. `due-soon` → `due_soon`) |
-| `getServerSession` | `src/lib/auth-context.ts` | Server-only: returns `{ user, academyId, role }`; redirects to /login if unauthenticated |
-| `getMembershipTypes` | `src/lib/queries/settings.ts` | Fetch active membership types for authenticated academy |
-| `getStudents` | `src/lib/queries/students.ts` | Fetch all students (lightweight — no payment history) |
-| `getStudentById` | `src/lib/queries/students.ts` | Fetch one student with full payment history |
-| `getStudentsByBatch` | `src/lib/queries/students.ts` | Fetch active/due-soon students for a batch |
-| `getBatches` | `src/lib/queries/batches.ts` | Fetch all active batches for authenticated academy |
-| `getBatchById` | `src/lib/queries/batches.ts` | Fetch one batch by ID |
-| `getAttendanceByBatch` | `src/lib/queries/attendance.ts` | Fetch all attendance records for a batch, ordered by date DESC |
-| `getAttendanceByStudent` | `src/lib/queries/attendance.ts` | Fetch attendance records for a student within a batch |
-| `getEnquiries` | `src/lib/queries/enquiries.ts` | Fetch all enquiries for authenticated academy, ordered by created_at DESC |
-| `mockStudents` | `src/lib/mock-data.ts` | Mutable student array — 12 seed records (preserved for Dashboard/Reports/Transactions) |
-| `mockCourtMembers` | `src/lib/mock-data.ts` | Mutable court member array — 3 seed records |
-| `mockAttendance` | `src/lib/mock-data.ts` | Mutable attendance array — preserved for legacy consumers |
-| `mockExpenses` | `src/lib/mock-data.ts` | Mutable expense array — 6 seed entries |
-| `mockIncomeEntries` | `src/lib/mock-data.ts` | Mutable income array — 4 seed entries |
-| `mockInventory` | `src/lib/mock-data.ts` | Mutable inventory array — 6 seed items |
-| `mockSettings` | `src/lib/mock-data.ts` | Mutable settings object — academy config |
-| `mockBatches` | `src/lib/mock-data.ts` | Mutable batch array — preserved for Dashboard/Reports |
-| `mockMessageLogs` | `src/lib/mock-data.ts` | Mutable message log array — 6 seed entries |
-| `EXPENSE_CATEGORIES` | `src/lib/mock-data.ts` | 9 expense category strings (const) |
-| `INCOME_CATEGORIES` | `src/lib/mock-data.ts` | 9 income category strings (const) |
-| `BUILTIN_INVENTORY_CATEGORIES` | `src/lib/mock-data.ts` | 4 inventory category strings (const) |
-| `UNIT_PRESETS` | `src/lib/mock-data.ts` | 6 unit preset strings (const) |
-| `PERMISSION_MATRIX` | `src/lib/mock-data.ts` | 11 modules × 5 roles permission table (const) |
-| `StatusBadge` | `src/components/ui/StatusBadge.tsx` | Colored status pill (Available/Booked/Blocked) |
-| `ConfirmDialog` | `src/components/ui/ConfirmDialog.tsx` | ⚠ Empty placeholder — renders `<div />` |
-| `Sidebar` | `src/components/layout/Sidebar.tsx` | Fixed left nav — brand, nav items, sign-out |
-| `TopBar` | `src/components/layout/TopBar.tsx` | Header — branch switcher + live clock |
-| `LiveClock` | `src/components/layout/LiveClock.tsx` | Real-time IST clock with pulsing indicator |
-| `createClient` (browser) | `src/lib/supabase/client.ts` | Supabase browser client — login page only |
-| `createClient` (server) | `src/lib/supabase/server.ts` | Supabase server client (strongly typed `<Database>`) — middleware + layouts + queries |
+### 5.1 Student Lifecycle & Dynamic Status Derivation
+- **State Machine:**
+  ```
+  [Enrolled, no receipt] → active profile / Pending fee ──(first receipt)──► active membership
+  [Active membership] ──(Due in ≤3 days)──► due-soon ──(Past due date)──► expired (Overdue)
+     │                                                                           │
+     ├──► inactive (deactivateStudent) ◄─────────────────────────────────────────┤
+     └──► dropout (DropoutConfirmModal) ──(AddStudentModal isReEnroll)──► active ┘
+  ```
+- **Real-Time Dynamic Derivation (Critical Rule):**
+  PostgreSQL triggers are event-driven (`INSERT`/`UPDATE`), not time-driven. Without a paid `pg_cron` extension, static DB rows will not advance as calendar days pass.
+  Therefore, queries read the latest active coverage receipt from `student_membership` and dynamically derive student status using `deriveStudentStatus(nextDueDate)`:
+  - `status IN ('dropout', 'inactive')` $\rightarrow$ Preserved as set by staff.
+  - No active coverage receipt $\rightarrow$ active administrative profile; shown in academy/batch Pending with no due date or collected amount. Individual financial histories omit this enrollment placeholder.
+  - `nextDueDate < todayIST` $\rightarrow$ `'expired'` *(Displayed in UI as **Overdue** in bold red)*.
+  - `nextDueDate <= todayIST + 3 days` $\rightarrow$ `'due-soon'` *(Displayed in UI as **Due Soon** in amber)*.
+  - `nextDueDate > todayIST + 3 days` $\rightarrow$ `'active'` *(Displayed in UI as **Active** in green)*.
 
----
+### 5.2 Enrollment, Re-Enrollment & Fee Receipts
+- **New Enrollment (`AddStudentModal.tsx`):**
+  - Duplicate check by phone within the academy.
+  - Creates only a `students` profile. Optional default `fees` starts at zero; no payment or coverage row is created.
+  - `joining_date` is immutable (enforced by `tr_students_immutable_joining_date`).
+- **Consolidated Re-Enrollment (`AddStudentModal.tsx` with `isReEnroll={true}`):**
+  - Standalone `ReEnrollModal.tsx` and `RenewModal.tsx` have been **permanently removed**.
+  - Inactive/Dropout students are re-enrolled by clicking "Re-enroll" in the inactive list, which opens `AddStudentModal` pre-filled with the student's personal details.
+  - Reactivates the profile and preserves historical receipts without creating a payment. Coverage is established separately.
+- **Fee Collection (`FeeReceiptModal.tsx`):**
+  - Each active non-clearance `student_payments` receipt owns `start_date` and `next_due_date`; `student_membership` selects the latest by coverage start date and ignores legacy rows missing coverage dates.
+  - Partial payment still grants full coverage; `remaining_amount` records the unpaid portion.
+  - A `due_clearance` receipt references the original receipt and has no coverage dates. The `record_student_due_clearance` RPC inserts it, and the database trigger atomically reduces the original balance; voiding the clearance restores it.
+  - Historical unpaid balances remain collectible after dropout and re-enrollment. Inactive original receipts retain their remaining balance and can be settled by a clearance receipt.
+  - The latest active receipt's due date can be adjusted by owner/manager through an audited RPC.
+  - Database trigger `sync_student_pending_amount()` (SECURITY DEFINER) automatically recalculates `students.pending_amount` whenever a payment row is inserted, updated, or voided.
+- **Dropout (`DropoutConfirmModal.tsx`):**
+  - Requires dropout reason and date. Sets status to `'dropout'` and marks active payment records as inactive.
 
-## 9. Cross-Cutting Conventions
+### 5.3 Accounts & Sales Module (V2 Segregated Ledger)
+- **Dual Tab Architecture:** `/accounts` is segregated into **Expenses** and **Sales / Income**.
+- **Sales Flow:**
+  - **Quick Sale (`QuickSaleForm.tsx`):** For ad-hoc walk-in sales or non-inventory revenue (e.g. racket restringing, grip wrapping). Requires item name, price > 0, date, payment method, optional notes.
+  - **Inventory Sale (`InventorySaleForm.tsx`):** Atomic two-phase sale. Staff selects an inventory item, sets quantity bounded by live stock.
+  - **Atomic Stock Deduction:** Handled by Supabase RPC `record_inventory_sale(p_academy_id, p_inventory_item_id, p_quantity, ...)`. Row-locks inventory record, verifies stock, decrements quantity, and writes the `sales` row in one atomic transaction.
+  - **Sale Reversal:** `reverse_inventory_sale()` RPC restores stock on edit or delete.
+- **Expense Flow (`ExpenseModal.tsx`):**
+  - Description, Date (default `getTodayIST()`), Category, Amount, Mode (optional), Vendor (optional), Notes (optional).
+  - Custom categories are saved per academy in the `custom_expense_categories` table and become available in the dropdown after the server callback succeeds.
 
-### Error Handling
+### 5.4 Attendance Marking
+- Recorded per batch and date in `/batches/[id]`.
+- Upserts the full day's attendance as JSONB map `{ "<student-uuid>": "present" | "absent" }` with `onConflict: 'batch_id, date'`.
+- Saving overwrites the record for that date. No partial row updates. Validated by database trigger `tr_attendance_validate_records`.
 
-- Per-route `error.tsx` files for route-level boundaries (Dashboard, Students, Transactions, Settings have them)
-- Toast notifications for operation feedback — see Toast section below
-- Server actions surface named error codes (e.g. `DUPLICATE_PHONE`) for client-side handling
-- No global error handler
-
-### Form Validation
-
-- Currently: inline conditional checks in modal components (`useState`), client-side only
-- No form library or Zod currently
-- Server actions perform their own validation (e.g. duplicate phone check in `createStudent`)
-- **Target:** Zod schemas in server actions, mirrored client-side
-
-### Loading / Empty / Error State Pattern
-
-| State | Implementation |
-|---|---|
-| Loading | Per-route `loading.tsx` with animated `animate-pulse` skeleton placeholders |
-| Empty | Inline conditional in page — icon + message + CTA button |
-| Error | Per-route `error.tsx` with retry button |
-
-### Toasts
-
-```typescript
-// Pattern
-const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
-// Auto-dismiss
-setTimeout(() => setToast(null), 3000)
-// Colors
-success: bg-emerald-50 text-emerald-700 border-emerald-200
-error:   bg-red-50 text-red-700 border-red-200
-// Position: bottom of screen (fixed), above modal overlay when inside a modal
-```
-
-### Timezone Handling
-
-- All display times and date comparisons use **IST (Asia/Kolkata)**
-- `getTodayIST()` for "today" — never `new Date()` directly for date comparisons
-- Live clock in TopBar uses `{ timeZone: 'Asia/Kolkata' }`
-- date-fns for all arithmetic; no raw `Date` constructors in display code
-
-### Currency Formatting
-
-- Always `₹` prefix
-- `formatCurrency(amount)` → `Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })`
-- Amounts are whole numbers in the app layer — no paise/cents in display
-- **DB stores paise**: multiply by 100 on INSERT; divide by 100 on SELECT in all query/action files
-- Inline: `toLocaleString('en-IN')` acceptable for quick formatting
-
-### Enum Mapping (DB ↔ App)
-
-- **Rule:** PostgreSQL enums for court and enquiry tables use underscores; the app uses hyphens.
-- `toAppEnum(v: string)` in `utils.ts` converts `due_soon → due-soon`, `not_scheduled → not-scheduled`, etc.
-- `toDbEnum(v: string)` does the reverse: `due-soon → due_soon`, `session-topup → session_topup`, etc.
-- **Exception:** `student_status` uses hyphen `'due-soon'` as the actual DB enum label — do NOT convert it. Apply `toDbEnum` only for `court_membership_status`, `court_payment_entry_type`, and `enquiry_status`.
-
-### Naming Conventions
-
-| Item | Convention | Example |
-|---|---|---|
-| Component files | PascalCase | `AddStudentModal.tsx` |
-| Route directories | kebab-case | `court-members/` |
-| Utility functions | camelCase | `formatCurrency` |
-| CSS tokens | `so-*` prefix | `bg-so-card`, `text-so-muted` |
-| Entity IDs | `crypto.randomUUID()` for new entities |
-| Check-in IDs | `Date.now().toString()` |
-| Attendance IDs | Supabase UUID (was compound `${batchId}-${YYYY-MM-DD}` in mock) |
-| Path alias | `@/*` → `./src/*` (tsconfig.json) |
-
-### Lucide Icons
-
-- Size: `w-5 h-5` (standard), `w-4 h-4` (compact/inline)
-- Stroke: `strokeWidth={1.75}` — always
-- `shrink-0` on all icons inside flex containers
-
-### Force Re-render Pattern (mock-only — being retired)
-
-```typescript
-const [, forceUpdate] = useState(0)
-const refresh = () => forceUpdate(n => n + 1)
-// Called after any mock-data mutation
-// Eliminated naturally as each feature migrates to server actions + revalidatePath
-```
+### 5.5 Court Membership & Action Placement Rule
+- **Plan Types:** Monthly (time-based with `start_date`, `end_date`) vs Sessions (count-based with `total_sessions`, `remaining_sessions`).
+- **Strict Separation of Operational vs Fee Actions (Locked Invariant):**
+  - **Members Page (`/court-memberships`, profile at `/court-memberships/[id]`):** Directory, member profiles, and operational **Check In** (decrements `remaining_sessions` with 5-second undo strip). This court flow currently uses in-memory demo records.
+  - **Fee Transactions Page (`/transactions`):** All financial actions (**Renew, Buy Sessions, Collect Pending**).
+  - **Never place fee actions on the Members page.**
 
 ---
 
-## 10. External Services and Environment
+## 6. Data & Representation Invariants
 
-| Service | Purpose | Status | Env Vars |
+1. **Currency in Paise:**
+   - Database columns (`fees`, `amount`, `pending_amount`, `price`, `selling_price`, `unit_price`, `paying_now`, `partial_due`) are **integers in paise**.
+   - Multiply by 100 before writing to Supabase; divide by 100 after reading.
+   - Always display in UI using `formatCurrency(amount)` (which outputs Rupee amounts like `₹1,500`).
+2. **Dates in IST:**
+   - Always store and compare as `YYYY-MM-DD` strings.
+   - Always obtain current date via `getTodayIST()`. Never compare against UTC dates.
+3. **Enum Conventions & Quirks:**
+   - PostgreSQL `student_status` uses `'due-soon'` (with hyphen) as the DB enum value. Do not convert it.
+   - PostgreSQL court and enquiry enums use underscores (`due_soon`, `sessions_low`, `not_scheduled`, `session_topup`).
+   - Use `toAppEnum()` and `toDbEnum()` from `src/lib/utils.ts` when crossing the DB boundary for court and enquiry states.
+
+---
+
+## 7. Key Database Invariants & Triggers
+
+PostgreSQL triggers enforce critical side-effects and constraints in the database. Understanding these prevents coding agents from writing conflicting client calculations or triggering database exceptions.
+
+| Invariant / Trigger | Target Table | Trigger Timing & Scope | Enforced Behavior | Agent Implementation Guardrail |
+|---|---|---|---|---|
+| `tr_sync_pending_amount_after_payment` | `student_payments` | AFTER INSERT, UPDATE (`remaining_amount`, `status`, `student_id`), DELETE | Automatically recalculates `students.pending_amount` by summing `remaining_amount` of non-deleted payment rows. Uses `SECURITY DEFINER`. | **NEVER manually calculate or update `students.pending_amount` in JavaScript.** Inserting or updating a payment entry automatically adjusts the balance. |
+| `tr_students_immutable_joining_date` | `students` | BEFORE UPDATE OF `joining_date` | Preserves the original enrollment date. | Never edit `joining_date` during re-enrollment or student edit. |
+| `tr_student_due_clearance` | `student_payments` | BEFORE INSERT or relevant UPDATE | Applies and reverses clearance against the original receipt under row lock, rejects overpayment, and blocks voiding an original with non-voided clearances. | Insert via `record_student_due_clearance`; never update the original balance in application code. Requires migration `20261112000004_due_clearance_and_adjustment.sql`. |
+| `tr_guard_student_receipt_amounts`, `tr_guard_student_receipt_due_date` | `student_payments` | BEFORE UPDATE of financial fields or due date | Blocks direct financial edits and unaudited due-date changes. | Use due-clearance receipts for balances and `adjust_student_receipt_due_date` RPC for due-date changes. |
+| `tr_payments_immutable_student_id` | `student_payments` | BEFORE UPDATE OF `student_id` | Throws an exception if `student_id` is modified. A payment entry can never be transferred to another student. | **Never reassign payment records.** Void the incorrect payment (`status = 'deleted'`) and create a new payment for the correct student. |
+| `tr_attendance_validate_records` | `attendance_records` | BEFORE INSERT OR UPDATE OF `records` | Validates JSONB map: all keys must be valid student UUIDs and values must be strictly `'present'` or `'absent'`. | **Pass only `{ [studentId: string]: 'present' \| 'absent' }`.** Never put arbitrary strings or flags in `records`. |
+| `tr_court_people_enforce_count` | `court_membership_people` | BEFORE INSERT | Enforces that attached individual records do not exceed `court_memberships.people_count` (capped at 1–8). | **Do not bypass the `people_count` check in court member modals.** |
+| `Cross-Tenant FK Validation Triggers` | `students`, `batches`, `court_memberships` | BEFORE INSERT OR UPDATE | Ensures referenced entities (e.g., student batch, court plan) belong to the exact same `academy_id`. | **Never attempt cross-academy associations.** Always scope queries and actions by `academyId`. |
+
+---
+
+## 8. Reuse, Never Reimplement
+
+Do NOT write custom formatting, date math, or enum conversions. Import and use these canonical helpers:
+
+| Helper | File Path | Signature | Purpose & Rule |
 |---|---|---|---|
-| Supabase Auth | Email/password authentication + session management | ✅ Active | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
-| Supabase PostgreSQL | Application data storage | ✅ Connected for 6 features | Same two vars above |
-| Meta WhatsApp Cloud API | Fee reminders, birthday wishes, holiday notices | 🔲 Stub — console.log only | `WHATSAPP_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID` |
-
-**API Routes:**
-- `POST /api/whatsapp/send` — stub handler, logs to console, returns mock response ID
+| `formatCurrency` | `src/lib/utils.ts` | `(amount: number) => string` | Formats Rupee amounts as `₹1,500` (en-IN). Never format currency inline. |
+| `getTodayIST` | `src/lib/utils.ts` | `() => string` | Returns current date in `YYYY-MM-DD` in `Asia/Kolkata`. Never use `new Date().toISOString()`. |
+| `getDateDaysAgoIST` | `src/lib/utils.ts` | `(daysAgo: number) => string` | Returns past date string `YYYY-MM-DD` in IST. |
+| `deriveStudentStatus` | `src/lib/utils.ts` | `(nextDueDate: string) => StudentStatus` | Dynamic real-time calculation in IST (Due in $\le 3$ days = `due-soon`, overdue = `expired`). Administrative inactive/dropout overrides are applied in queries. |
+| `toAppEnum` | `src/lib/utils.ts` | `(v: string) => string` | Converts DB underscores to app hyphens (e.g., `due_soon` → `due-soon`). |
+| `toDbEnum` | `src/lib/utils.ts` | `(v: string) => string` | Converts app hyphens to DB underscores (e.g., `due-soon` → `due_soon`). *(Exception: student_status uses hyphen in DB).* |
+| `getServerSession` | `src/lib/supabase/auth-context.ts` | `() => Promise<{ supabase, user, academyId, role }>` | Authenticated tenant & role context. Server-only. Redirects to `/login` if unauthenticated. |
 
 ---
 
-## 11. Known Architectural Issues
+## 9. External Services & Environment
 
-| Issue | Severity | Status | Resolution |
-|---|---|---|---|
-| Dashboard, Reports, Transactions, Court Members, Accounts, Inventory, Communications still on mock data | P0 | 🔲 Open | Migrate feature by feature |
-| `forceUpdate` + mutable arrays — no cross-component reactivity | P2 | Partially resolved | Eliminated naturally as each feature migrates to server actions + revalidatePath |
-| Permission matrix enforced in DB/actions but not in UI (all roles see all elements) | P1 | 🔲 Open | Role-conditional rendering after deployment |
-| `currentBatch` in mock-data.ts uses name string; DB uses batch_id UUID FK | P2 | Partially resolved | Mock preserved for legacy consumers; all new server actions use batch_id |
-| `mockSettings.batches` is still a string array | P2 | 🔲 Open | Eliminate when Settings page is fully migrated |
-| `next.config.ts` has dual export bug (`export default` + `module.exports`) | P2 | 🔲 Open | Remove `module.exports`, use only `export default nextConfig` |
-| `pro_logo.png` in project root, not `/public/` | P2 | 🔲 Open | Move to `public/pro_logo.png` |
-| `ConfirmDialog` component is an empty `<div />` | P2 | 🔲 Open | Implement or remove |
-| StudentsSegment report has hardcoded 12-month enrollment chart data | P3 | 🔲 Open | Wire to actual Supabase data |
-| Scratch files at project root (`scratch.ts`, `scratch.txt`, `scratch_accounts.tsx`) | P3 | 🔲 Open | Delete before production |
-| Three branding identities: `pro-badminton` / `EzyFee` / `so-*` tokens | P3 | 🔲 Open | Canonical name is **EzyFee**; `so-*` prefix is legacy |
-| `validityDays` on CourtPlan not enforced | P3 | 🔲 Open | Add expiry logic when Court Members migrated |
+| Service | Purpose | Live Status | Required Environment Variables | Architecture Notes |
+|---|---|---|---|---|
+| **Supabase Auth** | User authentication & session management | ✅ Active | `NEXT_PUBLIC_SUPABASE_URL`<br>`NEXT_PUBLIC_SUPABASE_ANON_KEY` | SSR cookie sessions. Browser client for Login and Sidebar sign-out; authenticated business queries/actions use the server client. |
+| **Supabase PostgreSQL** | Multi-tenant relational database | ✅ Active | Same as above | RLS enforced via `get_my_academy_id()`. Direct API type generation via `npm run db:types`. |
+| **Meta WhatsApp Cloud API** | Fee receipts, fee reminder alerts, birthday wishes | 🔲 Stub (`/api/whatsapp/send`) | `WHATSAPP_API_KEY`<br>`WHATSAPP_PHONE_NUMBER_ID` | Mock route logs message payload to console. Full production provider integration planned post-v1. |
+
+---
+
+## 10. Known Architectural Boundaries & Deferred Items
+
+| Item | Scope / Classification | Target Resolution |
+|---|---|---|
+| **Coach Mobile App** | Mobile-only feature | Deferred to post-deployment dedicated mobile interface. |
+| **Multi-Branch Module** | Scaling feature | Database schema supports `branch_id`; UI switcher activated post-v1 launch. |
+| **Offline Mode** | Network tolerance | Not supported in v1; application requires active internet connection. |
+| **WhatsApp Notifications** | Automated messaging | `/api/whatsapp/send` is an active stub; production integration planned post-launch. |
+| **Reports Migration** | Supabase migration | Fees uses live coaching receipts. Students and Attendance still consume mock seed arrays. Dashboard feature cards are live; its accounts summary remains explicitly Demo. |
+| **Settings, Court, Communications and shell settings** | Persistence migration | Business records/feature flags remain in memory; each requires separate migration work. |
+
+### 5.2 supplement: enrollment and receipt fields (2026-11-13)
+
+Enrollment and re-enrollment persist optional address, email, and independent multi-select enroll_days (Monday?Sunday). Existing records default to empty days. Re-enrollment preserves joining_date and creates no payment.
+
+Fee Receipt labels coverage as Payment For (Start Date / Next Due Date). Amount is the total charge; unchecked Partial Payment collects it in full. Checked Partial Payment requires a positive Paying Now below Amount; Partial Due is calculated in paise and read-only. Payment Mode, Transaction ID, and Notes are optional. Blank mode is stored as NULL and reported as Unspecified without dropping collected revenue. Transaction ID is stored on the receipt, including clearance receipts.
+
+### 7 supplement: exact balance clearance
+
+Migration 20261113000001_modal_fields.sql adds students.address, email, enroll_days; allows NULL student_payments.payment_method; and replaces record_student_due_clearance with a transaction-ID parameter. The RPC locks the original receipt and requires the submitted positive amount to equal its current remaining_amount. Stale balances fail rather than silently changing the collection amount. Existing apply/reversal and pending-balance triggers remain authoritative. Clearance retains its required mode. Paid Already shows the original receipt amount (not cumulative historical clearances); missing legacy coverage displays Unavailable.
+
+Deployment: migration prepared locally; hosted application remains pending explicit deployment instruction and authenticated verification. Apply after migrations through 20261112000004. Deploy the database change before the updated application.
+
+### 5.2 supplement: coaching transaction displays (2026-11-14)
+
+Recent/Paid share the same receipt table: Name, Phone Number, Amount Paid, Date, Payment For, Mode, Action. Remaining balances appear below Amount Paid only when positive. Type/Status are hidden display columns; data and membership/filtering rules are unchanged. Recent still includes voided receipts, with no repeat-void action. A bin icon invokes the existing void confirmation, not physical deletion. Blank modes remain Unspecified.
+
+Pending shows Name, Phone Number, Amount, Due Date, Action. Amount remains the student fee reference for students with active coverage; no-coverage profiles show a hyphen. Due-soon/overdue rows remain eligible. No new debt is created when coverage expires. Partial balances remain in Partially Paid, with original receipt amount and current remaining amount shown separately.
+
+Dates use dd MMM, yyyy locally to transaction tabs. A shared IST today value supplies Overdue Today / Overdue Nd / Due in Nd / New indicators and receipt aging. Future-dated receipts clamp age to zero. Linked due-clearance Payment For resolves the original receipt; missing/invalid legacy coverage displays a hyphen.
+
+Remind Now opens a user-reviewed WhatsApp draft using an Indian mobile number normalized to country code 91. It does not call the messaging API, auto-send, create message logs, or mutate database records. Missing/invalid numbers disable the action. Pending and partial reminders use their respective fee/balance context.
+
+### Development fee repair supplement (2026-11-14)
+
+Live inspection confirmed mixed legacy rupee/current paise data and a seven-argument clearance RPC without its deduction trigger. Revised migrations 20261112000003 and 20261112000004 must run in that order against the existing development database. The first converts explicit audited legacy fields, preserving newer paise rows; the second reconciles test clearances oldest first, voids duplicate/excess test entries, and installs accounting. Completion markers in column comments prevent repeated conversion or historical deduction. See src/lib/supabase/migrations/README.md for execution and verification.
+
+The clearance RPC uses SECURITY DEFINER with explicit allowed-role and academy checks so receptionists can lock an original without direct table UPDATE permission. It retains transaction ID and exact-current-balance checks, and refuses collection if its deduction trigger is missing or disabled. The trigger applies/reverses balances atomically; pending synchronization locks the student before summing. Financial guards prevent direct amount/identity/start-date edits, balance edits, physical deletion, and restoration of voided receipts. New originals require coverage; legacy originals may retain an empty date pair and remain settleable. Audited due-date adjustment excludes undated legacy rows.
+
+Current student/batch actions already multiply rupees by 100 on writes and queries divide paise by 100 on reads; no additional UI conversion is needed. The baseline database_schema.sql now includes the same accounting functions and triggers for fresh databases. The development repair scripts are prepared locally; hosted execution and authenticated browser/concurrency verification remain pending.
+
+### 5.2 supplement: transaction ordering (2026-11-14)
+
+Recent, Paid, and Partially Paid use one shared receipt ordering: creation timestamp descending, payment date descending, then receipt ID ascending for deterministic ties. Issue time is independent of the editable Amount Received On date; a newly entered backdated receipt appears first when it matches the payment-date filter. Updates, settlements, and voids do not promote old receipts by updated_at.
+
+Pending uses one ascending reference timeline without status/type tiers: active-coverage rows use next_due_date from the selected receipt at 00:00 IST; New rows use the actual students.created_at timestamp. A due date today therefore precedes an enrollment later today, and both precede a future due date. Older New rows can precede overdue memberships when their creation timestamps are earlier. Equal references use newest receipt/enrollment activity, then student ID. Missing/invalid reference dates sort last. joining_date is never used. In this tab only, today is red Overdue Today; past dates are red Overdue Nd, future dates are amber Due in Nd, and New is grey. Reminder drafts describe today as overdue. Global student lifecycle status derivation is unchanged.
+
+Existing students.created_at and student_payments.created_at are mapped to optional createdAt app fields. Receipt logs retain their payment-date fallback for missing/invalid issue timestamps. Pending uses the active receipt due date or New student creation time; there is no joining-date fallback. Equal references use receipt created_at (student created_at if unavailable), then ID. No schema or write changes are required. Tab eligibility, displayed dates, and date-range filtering remain unchanged.
+
+### Shared directories and scoped coaching transactions (current implementation)
+
+StudentList lives in src/components/students/StudentList.tsx. The student route supplies academy students; Batch Detail supplies historyStudents and batchScope. The scoped directory includes inactive and dropout students in their respective tabs, retains common columns/actions, hides cross-batch filters, and defaults enrollment to the batch UUID. getStudentsByBatch returns two named lists from the same current-batch result: attendanceStudents includes active/due-soon/expired; historyStudents includes all five statuses. It recognizes the standard 8-4-4-4-12 UUID form and retains authenticated academy lookup. Missing or empty batches return both lists empty.
+
+CoachingTransactions in src/components/transactions/ owns the four coaching tabs, search/date filters, collection/clearance modals and void confirmation. The route wrapper owns the Coaching/Court switch. Batch Detail and Student Profile embed the same controller instead of maintaining tables. transaction-data.ts applies a typed academy, batch, or student scope before constructing rows, totals, searches and action targets.
+
+- Academy scope: all loaded academy students; New placeholders remain in Pending.
+- Batch scope: current associated members matched by currentBatchId, including inactive/dropout receipt histories and partial balances. Pending excludes inactive/dropout profiles; New remains available for eligible active profiles. Full student payment histories follow the current batch after a transfer. Receipts are not attributed to the batch at payment time because no such field exists.
+- Student scope: only the selected student; no New enrollment placeholder in Pending. Pending requires active coverage and a due-soon/expired profile. Historical partial balances remain collectible here after inactivity/dropout.
+- Recent/Paid remain receipt rows. Partial is one row per non-voided original receipt with a positive remaining amount, never a single latest receipt or student-level balance. Clearance receives the exact selected receipt.
+- All contexts start with All history; payment-date filters apply to Recent/Paid, while Pending/Partial remain current work queues. Approved receipt and Pending comparators, readable dates, aging, Unspecified mode and manual WhatsApp drafts are shared.
+
+### 5.4 supplement: batch attendance roster and refresh (2026-11-15)
+
+The enrolled card/header count includes inactive and excludes dropout members; the directory's Dropout tab still shows associated dropout students. Attendance uses only active members (including due-soon/expired fee statuses). Insights show the active roster even before the first record exists. Marking counters, completion and Mark All Present use only that roster. Drafts preserve all existing saved marks, including hidden inactive/dropout/transferred students, so saving does not erase history. Attendance retains its existing full-day upsert contract.
+
+BatchDetail owns header/tab navigation and calls useBatchAttendance unconditionally. The extracted Attendance, Students and Transactions tabs are view adapters. Attendance state survives tab switches; changed URL requests initialize their saved day, and refreshed server records update insights without resetting an unsaved draft. The server page keys BatchDetail by batch UUID, preserving state on same-batch refresh while resetting it on batch navigation. AttendanceInsights and AttendanceMarking keep the existing UI; attendance-utils contains pure calculations. See the Phase 1/2 reports for local verification and remaining browser checks.
+
+Student/payment mutations invalidate /batches and the /batches/[id] page pattern as well as existing student/transaction routes. Batch membership is derived from refreshed props rather than copied student state. No schema, RPC, trigger, RLS or financial-write behavior was changed by this UI/data-loading refinement.
+
+### Dashboard reporting boundaries
+
+The dashboard is read-only: receipt balances and membership coverage are read from persisted rows; reporting never changes accounting. Collected counts non-voided receipt amounts, including clearance receipts exactly once. Money sums use integer paise arithmetic before formatting rupees. Pending Dues is the current remaining balance on original receipts whose coverage due date is in the selected period, across all student statuses. Renewal reminders never manufacture debt from the fee reference. Undated legacy balances are disclosed separately.
+
+Exact historical overdue/balance and inactive-status snapshots cannot be reconstructed from current rows. Past periods show Unavailable for dues/overdue and hide Fee Alerts. Active Members and Inactive Students are labeled current snapshots. Enrollment activity uses original joining dates; dropout activity uses retained dropout dates, which re-enrollment clears. The UI states these limitations.
+
+Attendance rates use explicitly marked student-sessions in the selected period; no mark is not an absence. Historical inactive/dropout/transferred marks are retained in reporting. Student alerts are evaluated per recorded batch, with a three-session minimum and 60% threshold; daily alerts list absences. There is no stored attendance threshold setting, so these explicit defaults retain the existing policy. Empty or insufficient data is distinguished from good attendance.
