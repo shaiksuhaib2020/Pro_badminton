@@ -1,7 +1,11 @@
-import { getServerSession } from '@/lib/supabase/auth-context'
-import type { SaleEntry } from '@/lib/mock-data'
+import 'server-only'
 
-function toSaleEntry(row: any): SaleEntry {
+import { getServerSession } from '@/lib/supabase/auth-context'
+import type { Database } from '@/lib/supabase/database.types'
+import type { SaleEntry } from '@/lib/types/accounts'
+import { readAllPages } from './read-all-pages'
+
+function toSaleEntry(row: Database['public']['Tables']['sales']['Row']): SaleEntry {
   return {
     id: row.id,
     date: row.date,
@@ -20,16 +24,14 @@ function toSaleEntry(row: any): SaleEntry {
 export async function getSales(): Promise<SaleEntry[]> {
   const { supabase, academyId } = await getServerSession()
 
-  const { data, error } = await supabase
+  const rows = await readAllPages((from, to) => supabase
     .from('sales')
     .select('*')
     .eq('academy_id', academyId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false })
+    .order('id')
+    .range(from, to))
 
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  return (data ?? []).map(toSaleEntry)
+  return rows.map(toSaleEntry)
 }

@@ -2,20 +2,17 @@
 
 import { useState } from 'react'
 import { X, Plus, AlertCircle, Check } from 'lucide-react'
-import {
-  type AccountEntry,
-  type PaymentMethod,
-  EXPENSE_CATEGORIES,
-  mockCustomExpenseCategories,
-} from '@/lib/mock-data'
+import type { AccountEntry } from '@/lib/types/accounts'
+import type { PaymentMethod } from '@/lib/types/payments'
+import { EXPENSE_CATEGORIES } from '@/lib/constants/accounts'
 import { getTodayIST } from '@/lib/utils'
 
 interface ExpenseModalProps {
   entry?: AccountEntry | null
-  customCategories?: string[]
+  customCategories: string[]
   onClose: () => void
   onSave: (entry: AccountEntry) => void
-  onAddCategory?: (name: string) => Promise<{ success: boolean; error?: string } | void>
+  onAddCategory: (name: string) => Promise<{ success: boolean; error?: string }>
   isSaving?: boolean
 }
 
@@ -41,7 +38,7 @@ export default function ExpenseModal({
   const [categories, setCategories] = useState<string[]>(() => {
     const combined = [
       ...EXPENSE_CATEGORIES,
-      ...(customCategories || mockCustomExpenseCategories),
+      ...customCategories,
     ]
     return Array.from(new Set(combined))
   })
@@ -65,6 +62,7 @@ export default function ExpenseModal({
   const [savingCategory, setSavingCategory] = useState(false)
 
   const handleSaveCustomCategory = async () => {
+    if (savingCategory) return
     const trimmed = newCategoryName.trim()
     if (!trimmed) {
       setCategoryError('Category name cannot be empty')
@@ -80,23 +78,23 @@ export default function ExpenseModal({
     }
 
     setSavingCategory(true)
-    if (onAddCategory) {
+    try {
       const res = await onAddCategory(trimmed)
-      if (res && 'error' in res && res.error) {
-        setCategoryError(res.error)
-        setSavingCategory(false)
+      if (!res.success) {
+        setCategoryError(res.error || 'Could not add category')
         return
       }
-    } else {
-      mockCustomExpenseCategories.push(trimmed)
-    }
-    setSavingCategory(false)
 
-    setCategories(prev => [...prev, trimmed])
-    setCategory(trimmed)
-    setNewCategoryName('')
-    setCategoryError(null)
-    setShowAddCategory(false)
+      setCategories(prev => [...prev, trimmed])
+      setCategory(trimmed)
+      setNewCategoryName('')
+      setCategoryError(null)
+      setShowAddCategory(false)
+    } catch (err: unknown) {
+      setCategoryError(err instanceof Error ? err.message : 'Could not add category')
+    } finally {
+      setSavingCategory(false)
+    }
   }
 
   const handleSubmit = (e: React.FormEvent) => {

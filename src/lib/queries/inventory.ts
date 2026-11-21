@@ -1,5 +1,7 @@
+import 'server-only'
+
 import { getServerSession } from '@/lib/supabase/auth-context'
-import type { InventoryItem } from '@/lib/mock-data'
+import type { InventoryItem } from '@/lib/types/inventory'
 import type { Tables } from '@/lib/supabase/database.types'
 
 function toInventoryItem(row: Tables<'inventory_items'>): InventoryItem {

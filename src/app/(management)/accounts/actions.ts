@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getServerSession } from '@/lib/supabase/auth-context'
-import type { AccountEntry, SaleEntry, SaleType } from '@/lib/mock-data'
+import type { AccountEntry, SaleEntry, SaleType } from '@/lib/types/accounts'
 
 export type ActionResult<T = undefined> =
   | { success: true; data?: T }
@@ -141,7 +141,7 @@ export async function createSale(
         p_category:          data.category,
         p_payment_method:    data.paymentMethod,
         p_date:              data.date,
-        p_notes:             data.notes ?? null,
+        p_notes:             data.notes ?? '',
       })
 
       if (error) {
@@ -169,6 +169,7 @@ export async function createSale(
     }
 
     revalidatePath('/accounts')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: any) {
     return { error: err.message || 'Failed to create sale' }
@@ -263,6 +264,7 @@ export async function updateSale(
     }
 
     revalidatePath('/accounts')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: any) {
     return { error: err.message || 'Failed to update sale' }
@@ -299,6 +301,7 @@ export async function deleteSale(
     }
 
     revalidatePath('/accounts')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: any) {
     return { error: err.message || 'Failed to delete sale' }

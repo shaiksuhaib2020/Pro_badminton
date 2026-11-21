@@ -1,7 +1,7 @@
 'use client'
 
 import { X } from 'lucide-react'
-import type { AccountEntry } from '@/lib/mock-data'
+import type { AccountEntry } from '@/lib/types/accounts'
 import { formatDate, formatCurrency } from '@/lib/utils'
 
 interface ExpenseDetailsModalProps {

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, Smile, Loader2 } from 'lucide-react'
-import type { InventoryItem } from '@/lib/mock-data'
+import type { InventoryItem } from '@/lib/types/inventory'
 import EmojiPicker from 'emoji-picker-react'
 
 interface EditInventoryModalProps {

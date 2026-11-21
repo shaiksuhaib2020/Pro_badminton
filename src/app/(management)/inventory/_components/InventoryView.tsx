@@ -2,15 +2,15 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import type { InventoryItem } from '@/lib/mock-data'
-import { BUILTIN_INVENTORY_CATEGORIES } from '@/lib/mock-data'
+import type { InventoryItem } from '@/lib/types/inventory'
+import { BUILTIN_INVENTORY_CATEGORIES } from '@/lib/constants/inventory'
 import {
   Plus, Trash2, Pencil, Search, ChevronDown, Check, Package, X,
   AlertCircle, AlertTriangle, CheckCircle2, MoreVertical, Filter, ArrowUpDown,
 } from 'lucide-react'
-import EditInventoryModal from '@/components/accounts/EditInventoryModal'
-import AddInventoryModal from '@/components/accounts/AddInventoryModal'
-import InventoryDetailsModal from '@/components/accounts/InventoryDetailsModal'
+import EditInventoryModal from '@/app/(management)/inventory/_components/EditInventoryModal'
+import AddInventoryModal from '@/app/(management)/inventory/_components/AddInventoryModal'
+import InventoryDetailsModal from '@/app/(management)/inventory/_components/InventoryDetailsModal'
 import {
   createInventoryItem,
   updateInventoryItem,

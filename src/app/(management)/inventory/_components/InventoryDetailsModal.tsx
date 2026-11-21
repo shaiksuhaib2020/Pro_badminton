@@ -1,5 +1,5 @@
 import { X, Pencil } from 'lucide-react'
-import { InventoryItem } from '@/lib/mock-data'
+import type { InventoryItem } from '@/lib/types/inventory'
 
 interface InventoryDetailsModalProps {
   item: InventoryItem

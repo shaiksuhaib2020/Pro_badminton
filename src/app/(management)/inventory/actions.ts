@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getServerSession } from '@/lib/supabase/auth-context'
-import type { InventoryItem } from '@/lib/mock-data'
+import type { InventoryItem } from '@/lib/types/inventory'
 
 export type ActionResult<T = undefined> =
   | { success: true; data?: T }
@@ -35,6 +35,7 @@ export async function createInventoryItem(
     }
 
     revalidatePath('/inventory')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: any) {
     return { error: err.message || 'Failed to create inventory item' }
@@ -72,6 +73,7 @@ export async function updateInventoryItem(
     }
 
     revalidatePath('/inventory')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: any) {
     return { error: err.message || 'Failed to update inventory item' }
@@ -95,6 +97,7 @@ export async function deleteInventoryItem(
     }
 
     revalidatePath('/inventory')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: any) {
     return { error: err.message || 'Failed to delete inventory item' }

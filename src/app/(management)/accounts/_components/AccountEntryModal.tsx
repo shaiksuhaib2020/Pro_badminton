@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { X, AlertCircle } from 'lucide-react'
-import { AccountEntry, EXPENSE_CATEGORIES, INCOME_CATEGORIES, mockCustomExpenseCategories, mockCustomInventoryCategories } from '@/lib/mock-data'
+import type { AccountEntry } from '@/lib/types/accounts'
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '@/lib/constants/accounts'
+import { mockCustomExpenseCategories, mockCustomInventoryCategories } from '@/lib/mock-data'
 import { format } from 'date-fns'
 
 interface AccountEntryModalProps {
