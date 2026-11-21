@@ -1,5 +1,7 @@
+import 'server-only'
+
 import { getServerSession } from '@/lib/supabase/auth-context'
-import type { Batch } from '@/lib/mock-data'
+import type { Batch } from '@/lib/types/batches'
 
 export async function getBatches(): Promise<Batch[]> {
   const { supabase } = await getServerSession()
@@ -19,7 +21,7 @@ export async function getBatches(): Promise<Batch[]> {
     name: row.name,
     description: row.description ?? undefined,
     days: (row.days ?? []) as string[],
-    fees: row.fees !== null && row.fees !== undefined ? row.fees : undefined,
+    fees: row.fees !== null && row.fees !== undefined ? row.fees / 100 : undefined,
     branchId: row.branch_id ?? '',
   }))
 }
@@ -39,7 +41,7 @@ export async function getBatchById(id: string): Promise<Batch | null> {
     name: data.name,
     description: data.description ?? undefined,
     days: (data.days ?? []) as string[],
-    fees: data.fees !== null && data.fees !== undefined ? data.fees : undefined,
+    fees: data.fees !== null && data.fees !== undefined ? data.fees / 100 : undefined,
     branchId: data.branch_id ?? '',
   }
 }

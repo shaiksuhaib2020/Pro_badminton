@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Student, Batch, mockSettings } from '@/lib/mock-data'
+import type { Student } from '@/lib/types/students'
+import type { Batch } from '@/lib/types/batches'
 import { Search, UserPlus, MoreVertical, CheckCircle } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 import AddStudentModal from '@/components/students/AddStudentModal'
 import EditStudentModal from '@/components/students/EditStudentModal'
-import ReEnrollModal from '@/components/students/ReEnrollModal'
 import DropoutConfirmModal from '@/components/students/DropoutConfirmModal'
 import {
   deactivateStudent,
@@ -19,14 +20,58 @@ import {
 
 type TabType = 'active' | 'inactive' | 'dropout'
 
+interface ActionMenuState {
+  student: Student
+  tab: TabType
+  triggerRect: {
+    top: number
+    bottom: number
+    left: number
+    right: number
+  }
+}
+
 interface StudentListProps {
   students: Student[]
   batches?: Batch[]
+  batchScope?: Batch
 }
 
-export default function StudentList({ students, batches = [] }: StudentListProps) {
+export default function StudentList({ students: suppliedStudents, batches = [], batchScope }: StudentListProps) {
+  const students = batchScope
+    ? suppliedStudents.filter(student => student.currentBatchId === batchScope.id)
+    : suppliedStudents
   const router = useRouter()
-  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null)
+  const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Close menu on Escape, outside scroll (including table overflow container), and resize
+  useEffect(() => {
+    if (!actionMenu) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActionMenu(null)
+    }
+
+    const handleScroll = () => {
+      setActionMenu(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('scroll', handleScroll, true)
+    window.addEventListener('resize', handleScroll)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('resize', handleScroll)
+    }
+  }, [actionMenu])
+
   const [toastMessage, setToastMessage] = useState<{ type: 'error' | 'success'; message: string } | null>(null)
 
   const showToast = (type: 'error' | 'success', message: string) => {
@@ -38,8 +83,8 @@ export default function StudentList({ students, batches = [] }: StudentListProps
   const [searchQuery, setSearchQuery] = useState('')
   const [activeBatchFilter, setActiveBatchFilter] = useState<string>('all')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [reEnrollPrefill, setReEnrollPrefill] = useState<Student | null>(null)
   const [editTarget, setEditTarget] = useState<Student | null>(null)
-  const [reEnrollTarget, setReEnrollTarget] = useState<Student | null>(null)
   const [dropoutTarget, setDropoutTarget] = useState<Student | null>(null)
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -49,6 +94,166 @@ export default function StudentList({ students, batches = [] }: StudentListProps
     setActiveTab(tab)
     setActiveBatchFilter('all')
     setSearchQuery('')
+    setActionMenu(null)
+  }
+
+  const handleMenuClick = (
+    student: Student,
+    tab: TabType,
+    e: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e.stopPropagation()
+    if (actionMenu?.student.id === student.id) {
+      setActionMenu(null)
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect()
+      setActionMenu({
+        student,
+        tab,
+        triggerRect: {
+          top: rect.top,
+          bottom: rect.bottom,
+          left: rect.left,
+          right: rect.right,
+        },
+      })
+    }
+  }
+
+  const renderActionMenuPortal = () => {
+    if (!mounted || !actionMenu || typeof document === 'undefined') return null
+
+    const { student, tab, triggerRect } = actionMenu
+    const estimatedHeight = 140
+    const spaceBelow = window.innerHeight - triggerRect.bottom
+    const openUpward = spaceBelow < estimatedHeight
+
+    const rightDistance = Math.max(8, window.innerWidth - triggerRect.right)
+    const topPos = openUpward ? undefined : triggerRect.bottom + 4
+    const bottomPos = openUpward ? window.innerHeight - triggerRect.top + 4 : undefined
+
+    return createPortal(
+      <>
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setActionMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setActionMenu(null)
+          }}
+        />
+        <div
+          className="fixed z-50 w-44 bg-white border border-so-border rounded-lg shadow-lg py-1 animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            right: `${rightDistance}px`,
+            top: topPos !== undefined ? `${topPos}px` : undefined,
+            bottom: bottomPos !== undefined ? `${bottomPos}px` : undefined,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {tab === 'active' && (
+            <>
+              <button
+                onClick={() => {
+                  handleDeactivate(student.id)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface cursor-pointer"
+              >
+                Move to Inactive
+              </button>
+              <button
+                onClick={() => {
+                  setDropoutTarget(student)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface cursor-pointer"
+              >
+                Move to Dropout
+              </button>
+              <div className="border-t border-so-border my-1" />
+              <button
+                onClick={() => {
+                  setDeleteConfirmId(student.id)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </>
+          )}
+
+          {tab === 'inactive' && (
+            <>
+              <button
+                onClick={() => {
+                  handleActivate(student.id)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface cursor-pointer"
+              >
+                Move to Active
+              </button>
+              <button
+                onClick={() => {
+                  setDropoutTarget(student)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface cursor-pointer"
+              >
+                Move to Dropout
+              </button>
+              <div className="border-t border-so-border my-1" />
+              <button
+                onClick={() => {
+                  setDeleteConfirmId(student.id)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </>
+          )}
+
+          {tab === 'dropout' && (
+            <>
+              <button
+                onClick={() => {
+                  handleActivate(student.id)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface cursor-pointer"
+              >
+                Move to Active
+              </button>
+              <button
+                onClick={() => {
+                  handleDeactivate(student.id)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface cursor-pointer"
+              >
+                Move to Inactive
+              </button>
+              <div className="border-t border-so-border my-1" />
+              <button
+                onClick={() => {
+                  setDeleteConfirmId(student.id)
+                  setDeleteHasDues(getTotalDue(student) > 0)
+                  setActionMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </>
+          )}
+        </div>
+      </>,
+      document.body
+    )
   }
 
   const getBatchName = (batchIdOrName: string) => {
@@ -97,9 +302,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
   const dropoutCount = students.filter(s => s.status === 'dropout').length
 
   const getTotalDue = (s: Student) => {
-    if (s.pendingAmount > 0) return s.pendingAmount
-    if (s.status === 'expired' || s.status === 'due-soon') return s.fees
-    return 0
+    return s.pendingAmount + (s.membershipReceiptId && (s.status === 'expired' || s.status === 'due-soon') ? s.fees : 0)
   }
 
   const handleDeactivate = async (id: string) => {
@@ -109,7 +312,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
     } catch (err: unknown) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update student')
     }
-    setOpenActionMenuId(null)
+    setActionMenu(null)
   }
 
   const handleActivate = async (id: string) => {
@@ -119,7 +322,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
     } catch (err: unknown) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update student')
     }
-    setOpenActionMenuId(null)
+    setActionMenu(null)
   }
 
   const handlePermanentDelete = async (id: string) => {
@@ -145,7 +348,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
   }
 
   return (
-    <div className="max-w-7xl mx-auto pb-12">
+    <div className={batchScope ? 'max-w-7xl mx-auto' : 'max-w-7xl mx-auto pb-12'}>
       {toastMessage && (
         <div
           className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl flex items-center justify-center font-medium shadow-lg transition-all ${
@@ -162,7 +365,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
         {/* Page top bar */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-so-text">Students</h1>
+            {!batchScope && <h1 className="text-2xl font-bold text-so-text">Students</h1>}
             <p className="text-so-muted text-sm mt-0.5">
               {activeCount} active • {dropoutCount} off-court
             </p>
@@ -213,7 +416,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
         </div>
 
         {/* Batch Filters & Context */}
-        {activeTab === 'active' && (
+        {activeTab === 'active' && !batchScope && (
           <div className="flex flex-col gap-3 mb-6">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-so-muted">Batch:</span>
@@ -227,7 +430,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
               >
                 All Batches
               </button>
-              {(batches.length > 0 ? batches.map(b => b.name) : mockSettings.batches).map(batchName => (
+              {batches.map(batch => batch.name).map(batchName => (
                 <button
                   key={batchName}
                   onClick={() => setActiveBatchFilter(batchName)}
@@ -320,7 +523,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-medium">
                             <span className={student.status === 'expired' ? 'text-so-red font-semibold' : 'text-[#5278EA]'}>
-                              {formatDate(student.nextDueDate)}
+                              {student.nextDueDate ? formatDate(student.nextDueDate) : 'No receipt yet'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-so-muted">{student.guardianName || ''}</td>
@@ -346,46 +549,15 @@ export default function StudentList({ students, batches = [] }: StudentListProps
                                   </button>
                                 </div>
                               ) : (
-                                <div className="relative">
-                                  <button
-                                    onClick={() => setOpenActionMenuId(openActionMenuId === student.id ? null : student.id)}
-                                    className="p-1.5 text-so-muted hover:text-so-text hover:bg-so-surface rounded-md"
-                                  >
-                                    <MoreVertical className="w-4 h-4" />
-                                  </button>
-                                  {openActionMenuId === student.id && (
-                                    <>
-                                      <div className="fixed inset-0 z-10" onClick={() => setOpenActionMenuId(null)}></div>
-                                      <div className="absolute right-0 mt-1 w-40 bg-white border border-so-border rounded-lg shadow-lg z-20 py-1">
-                                        <button
-                                          onClick={() => handleDeactivate(student.id)}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface"
-                                        >
-                                          Move to Inactive
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setDropoutTarget(student)
-                                            setOpenActionMenuId(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface"
-                                        >
-                                          Move to Dropout
-                                        </button>
-                                        <div className="border-t border-so-border my-1"></div>
-                                        <button
-                                          onClick={() => {
-                                            setDeleteConfirmId(student.id)
-                                            setOpenActionMenuId(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
-                                        >
-                                          Delete Permanently
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
+                                <button
+                                  onClick={(e) => handleMenuClick(student, 'active', e)}
+                                  className={`p-1.5 text-so-muted hover:text-so-text hover:bg-so-surface rounded-md transition-colors ${
+                                    actionMenu?.student.id === student.id ? 'bg-so-surface text-so-text' : ''
+                                  }`}
+                                  title="Actions"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </button>
                               )}
                             </div>
                           </td>
@@ -453,7 +625,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-medium">
                             <span className={student.status === 'expired' ? 'text-so-red font-semibold' : 'text-[#5278EA]'}>
-                              {formatDate(student.nextDueDate)}
+                              {student.nextDueDate ? formatDate(student.nextDueDate) : 'No receipt yet'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-so-muted">{student.guardianName || ''}</td>
@@ -479,46 +651,26 @@ export default function StudentList({ students, batches = [] }: StudentListProps
                                   </button>
                                 </div>
                               ) : (
-                                <div className="relative">
+                                <>
                                   <button
-                                    onClick={() => setOpenActionMenuId(openActionMenuId === student.id ? null : student.id)}
-                                    className="p-1.5 text-so-muted hover:text-so-text hover:bg-so-surface rounded-md"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setReEnrollPrefill(student)
+                                    }}
+                                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+                                  >
+                                    Re-enroll
+                                  </button>
+                                  <button
+                                    onClick={(e) => handleMenuClick(student, 'inactive', e)}
+                                    className={`p-1.5 text-so-muted hover:text-so-text hover:bg-so-surface rounded-md transition-colors ${
+                                      actionMenu?.student.id === student.id ? 'bg-so-surface text-so-text' : ''
+                                    }`}
+                                    title="Actions"
                                   >
                                     <MoreVertical className="w-4 h-4" />
                                   </button>
-                                  {openActionMenuId === student.id && (
-                                    <>
-                                      <div className="fixed inset-0 z-10" onClick={() => setOpenActionMenuId(null)}></div>
-                                      <div className="absolute right-0 mt-1 w-40 bg-white border border-so-border rounded-lg shadow-lg z-20 py-1">
-                                        <button
-                                          onClick={() => handleActivate(student.id)}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface"
-                                        >
-                                          Move to Active
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setDropoutTarget(student)
-                                            setOpenActionMenuId(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface"
-                                        >
-                                          Move to Dropout
-                                        </button>
-                                        <div className="border-t border-so-border my-1"></div>
-                                        <button
-                                          onClick={() => {
-                                            setDeleteConfirmId(student.id)
-                                            setOpenActionMenuId(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
-                                        >
-                                          Delete Permanently
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
+                                </>
                               )}
                             </div>
                           </td>
@@ -602,44 +754,15 @@ export default function StudentList({ students, batches = [] }: StudentListProps
                                   </button>
                                 </div>
                               ) : (
-                                <div className="relative">
-                                  <button
-                                    onClick={() => setOpenActionMenuId(openActionMenuId === student.id ? null : student.id)}
-                                    className="p-1.5 text-so-muted hover:text-so-text hover:bg-so-surface rounded-md"
-                                  >
-                                    <MoreVertical className="w-4 h-4" />
-                                  </button>
-                                  {openActionMenuId === student.id && (
-                                    <>
-                                      <div className="fixed inset-0 z-10" onClick={() => setOpenActionMenuId(null)}></div>
-                                      <div className="absolute right-0 mt-1 w-40 bg-white border border-so-border rounded-lg shadow-lg z-20 py-1">
-                                        <button
-                                          onClick={() => handleActivate(student.id)}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface"
-                                        >
-                                          Move to Active
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeactivate(student.id)}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-so-text hover:bg-so-surface"
-                                        >
-                                          Move to Inactive
-                                        </button>
-                                        <div className="border-t border-so-border my-1"></div>
-                                        <button
-                                          onClick={() => {
-                                            setDeleteConfirmId(student.id)
-                                            setDeleteHasDues(getTotalDue(student) > 0)
-                                            setOpenActionMenuId(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
-                                        >
-                                          Delete Permanently
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
+                                <button
+                                  onClick={(e) => handleMenuClick(student, 'dropout', e)}
+                                  className={`p-1.5 text-so-muted hover:text-so-text hover:bg-so-surface rounded-md transition-colors ${
+                                    actionMenu?.student.id === student.id ? 'bg-so-surface text-so-text' : ''
+                                  }`}
+                                  title="Actions"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </button>
                               )}
                             </div>
                           </td>
@@ -654,11 +777,22 @@ export default function StudentList({ students, batches = [] }: StudentListProps
         </div>
 
         {/* Modals */}
-        {showAddModal && (
+        {/* Add Student Modal (also used for Re-enrollment with prefill) */}
+        {(showAddModal || reEnrollPrefill) && (
           <AddStudentModal
+            defaultBatch={batchScope?.id}
             batches={batches}
-            onClose={() => setShowAddModal(false)}
-            onSuccess={() => setShowAddModal(false)}
+            prefillData={reEnrollPrefill ?? undefined}
+            isReEnroll={!!reEnrollPrefill}
+            onClose={() => {
+              setShowAddModal(false)
+              setReEnrollPrefill(null)
+            }}
+            onSuccess={() => {
+              setShowAddModal(false)
+              setReEnrollPrefill(null)
+              router.refresh()
+            }}
           />
         )}
 
@@ -667,16 +801,7 @@ export default function StudentList({ students, batches = [] }: StudentListProps
             student={editTarget}
             batches={batches}
             onClose={() => setEditTarget(null)}
-            onSave={() => setEditTarget(null)}
-          />
-        )}
-
-        {reEnrollTarget && (
-          <ReEnrollModal
-            student={reEnrollTarget}
-            batches={batches}
-            onClose={() => setReEnrollTarget(null)}
-            onConfirm={() => setReEnrollTarget(null)}
+            onSave={() => { setEditTarget(null); router.refresh() }}
           />
         )}
 
@@ -687,6 +812,9 @@ export default function StudentList({ students, batches = [] }: StudentListProps
             onConfirm={handleDropoutConfirm}
           />
         )}
+
+        {/* Action Menu Portal */}
+        {renderActionMenuPortal()}
       </div>
     </div>
   )

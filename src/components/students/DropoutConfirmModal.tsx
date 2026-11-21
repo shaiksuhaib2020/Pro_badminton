@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Student } from '@/lib/mock-data'
+import type { Student } from '@/lib/types/students'
 import { X, Loader2 } from 'lucide-react'
 import { formatDate, getTodayIST } from '@/lib/utils'
 import { dropoutStudent } from '@/app/(management)/students/actions'

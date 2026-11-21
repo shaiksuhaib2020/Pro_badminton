@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Student, Batch, mockSettings, mockBatches } from '@/lib/mock-data'
+import type { Student } from '@/lib/types/students'
+import type { Batch } from '@/lib/types/batches'
 import { CheckCircle, AlertCircle, X, Loader2 } from 'lucide-react'
-import { deriveStudentStatus } from '@/lib/utils'
 import { updateStudent } from '@/app/(management)/students/actions'
 import { getBatchesAction } from '@/app/(management)/batches/actions'
 
@@ -34,26 +34,18 @@ export default function EditStudentModal({
     }
   }, [batches])
 
-  const availableBatches = batchList.length > 0
-    ? batchList
-    : mockBatches.length > 0
-      ? mockBatches
-      : mockSettings.batches.map(name => ({ id: name, name, days: [], fees: 0, branchId: '' }))
+  const availableBatches = batchList
   // Personal
   const [name, setName] = useState(student.name)
   const [phone, setPhone] = useState(student.phone)
   const [guardianName, setGuardianName] = useState(student.guardianName ?? '')
   const [alternatePhone, setAlternatePhone] = useState(student.alternatePhone ?? '')
-  const [address, setAddress] = useState(student.address ?? '')
-  const [email, setEmail] = useState(student.email ?? '')
   const [dateOfBirth, setDateOfBirth] = useState(student.dateOfBirth ?? '')
   const [internalNotes, setInternalNotes] = useState(student.internalNotes ?? '')
 
   // Coaching & Agreement
-  const [selectedBatch, setSelectedBatch] = useState(student.currentBatch)
+  const [selectedBatch, setSelectedBatch] = useState(student.currentBatchId ?? student.currentBatch)
   const [fees, setFees] = useState<number>(student.fees)
-  const [startDate, setStartDate] = useState(student.startDate ?? '')
-  const [nextDueDate, setNextDueDate] = useState(student.nextDueDate ?? '')
   const [enrollmentSource, setEnrollmentSource] = useState<Student['enrollmentSource'] | ''>(student.enrollmentSource ?? '')
 
   // Toast & Loading
@@ -65,11 +57,6 @@ export default function EditStudentModal({
     const t = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(t)
   }, [toast])
-
-  const computedStatus = (): Student['status'] => {
-    if (student.status === 'dropout') return 'dropout'
-    return deriveStudentStatus(nextDueDate)
-  }
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -84,10 +71,6 @@ export default function EditStudentModal({
       setToast({ type: 'error', message: 'Fee cannot be negative.' })
       return
     }
-    if (!nextDueDate) {
-      setToast({ type: 'error', message: 'End Date / Valid Until is required.' })
-      return
-    }
 
     setIsSubmitting(true)
     try {
@@ -100,8 +83,7 @@ export default function EditStudentModal({
         internalNotes: internalNotes.trim() || undefined,
         batchId: selectedBatch,
         fees,
-        nextDueDate,
-        enrollmentSource: (enrollmentSource as any) || undefined,
+        enrollmentSource: enrollmentSource || undefined,
       })
 
       // Apply changes to student object for local UI state
@@ -110,15 +92,12 @@ export default function EditStudentModal({
         phone: phone.trim(),
         guardianName: guardianName.trim() || undefined,
         alternatePhone: alternatePhone.trim() || undefined,
-        address: address.trim() || undefined,
-        email: email.trim() || undefined,
         dateOfBirth: dateOfBirth || undefined,
         internalNotes: internalNotes.trim() || undefined,
-        currentBatch: selectedBatch,
+        currentBatch: availableBatches.find(batch => batch.id === selectedBatch)?.name ?? selectedBatch,
+        currentBatchId: selectedBatch,
         fees,
-        nextDueDate,
         enrollmentSource: enrollmentSource || undefined,
-        status: computedStatus(),
       })
 
       setToast({ type: 'success', message: `${name.trim()} updated successfully.` })
@@ -219,33 +198,6 @@ export default function EditStudentModal({
                 />
               </div>
 
-              {/* Email */}
-              <div>
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="e.g. student@example.com"
-                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text placeholder:text-so-muted focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
-                />
-              </div>
-
-              {/* Address */}
-              <div className="col-span-2">
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Address
-                </label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={e => setAddress(e.target.value)}
-                  placeholder="Residential address"
-                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text placeholder:text-so-muted focus:outline-none focus:border-so-accent focus:ring-1 focus:ring-so-accent/30"
-                />
-              </div>
             </div>
           </div>
 
@@ -275,7 +227,7 @@ export default function EditStudentModal({
                   className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent capitalize"
                 >
                   {availableBatches.map(b => (
-                    <option key={b.id || b.name} value={b.name}>
+                    <option key={b.id || b.name} value={b.id}>
                       {b.name} {b.fees ? `(₹${b.fees.toLocaleString('en-IN')})` : ''}
                     </option>
                   ))}
@@ -298,31 +250,7 @@ export default function EditStudentModal({
               </div>
 
 
-              {/* End Date / Valid Until */}
-              <div>
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  End Date / Valid Until <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={nextDueDate}
-                  onChange={e => setNextDueDate(e.target.value)}
-                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
-                />
-              </div>
-
-              {/* Joining Date / Date of Admission */}
-              <div>
-                <label className="block text-xs text-so-muted uppercase tracking-wider mb-1.5">
-                  Joining Date / Date of Admission
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
-                  className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm text-so-text focus:outline-none focus:border-so-accent"
-                />
-              </div>
+              <div className="text-xs text-so-muted">Joining date and membership coverage are managed separately.</div>
 
               {/* Source */}
               <div>

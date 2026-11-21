@@ -2,23 +2,22 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Student, Batch, AttendanceRecord } from '@/lib/mock-data'
-import { isWithinInterval, parseISO, format, startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay, getDay, getDaysInMonth } from 'date-fns'
-import { calcAge, formatDate } from '@/lib/utils'
+import type { Student } from '@/lib/types/students'
+import type { Batch } from '@/lib/types/batches'
+import type { AttendanceRecord } from '@/lib/types/attendance'
+import { parseISO, format, getDay, getDaysInMonth } from 'date-fns'
+import { calcAge, formatCurrency, formatDate } from '@/lib/utils'
 import {
-  ArrowLeft, Phone, User, Calendar, CreditCard, Shield, IndianRupee, Users,
-  Receipt, CheckCircle, RefreshCw, SlidersHorizontal, X, Wallet, Trash2,
-  AlertCircle, Clock, ChevronLeft, ChevronRight, Pencil, MapPin, Mail, Compass,
-  Loader2
+  ArrowLeft, Phone, User, Calendar, Shield, IndianRupee, Users,
+  CheckCircle, X, 
+  AlertCircle, ChevronLeft, ChevronRight, Pencil, Compass,
 } from 'lucide-react'
-import RenewModal from '@/components/coaching/RenewModal'
-import CollectRemainingModal from '@/components/students/CollectRemainingModal'
+import FeeReceiptModal from '@/components/transactions/FeeReceiptModal'
+import CoachingTransactions from '@/components/transactions/CoachingTransactions'
 import EditStudentModal from '@/components/students/EditStudentModal'
-import { voidPayment } from '@/app/(management)/students/actions'
+import { adjustDueDate } from '@/app/(management)/students/actions'
 
 type ProfileTab = 'details' | 'transactions' | 'attendance'
-type TxTab = 'recent' | 'paid' | 'pending' | 'partial'
-type FilterRange = 'currentMonth' | 'lastMonth' | 'custom'
 
 const InfoRow = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) => (
   <div className="flex items-start gap-3">
@@ -34,9 +33,10 @@ interface StudentProfileViewProps {
   student: Student
   batches?: Batch[]
   attendance?: AttendanceRecord[]
+  canAdjustDueDate?: boolean
 }
 
-export default function StudentProfileView({ student, batches = [], attendance = [] }: StudentProfileViewProps) {
+export default function StudentProfileView({ student, batches = [], attendance = [], canAdjustDueDate = false }: StudentProfileViewProps) {
   const router = useRouter()
 
   const getBatchName = (batchIdOrName?: string) => {
@@ -50,89 +50,29 @@ export default function StudentProfileView({ student, batches = [], attendance =
   }
 
   const [profileTab, setProfileTab] = useState<ProfileTab>('details')
-  const [txTab, setTxTab] = useState<TxTab>('recent')
-  const [showFilter, setShowFilter] = useState(false)
-  const [filterRange, setFilterRange] = useState<FilterRange>('currentMonth')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
   const [renewTarget, setRenewTarget] = useState(false)
-  const [collectRemaining, setCollectRemaining] = useState(false)
-  const [voidConfirmId, setVoidConfirmId] = useState<string | null>(null)
-  const [isVoiding, setIsVoiding] = useState<string | null>(null)
+  const [showAdjust, setShowAdjust] = useState(false)
+  const [adjustedDate, setAdjustedDate] = useState(student.nextDueDate)
+  const [adjustReason, setAdjustReason] = useState('')
+  const [isAdjusting, setIsAdjusting] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [showEdit, setShowEdit] = useState(false)
   const [viewYear, setViewYear] = useState(new Date().getFullYear())
   const [viewMonth, setViewMonth] = useState(new Date().getMonth())
-
-  const computeRange = (range: FilterRange, cFrom: string, cTo: string) => {
-    const now = new Date()
-    switch (range) {
-      case 'currentMonth':
-        return { start: startOfMonth(now), end: endOfMonth(now) }
-      case 'lastMonth': {
-        const lm = subMonths(now, 1)
-        return { start: startOfMonth(lm), end: endOfMonth(lm) }
-      }
-      case 'custom':
-        if (!cFrom || !cTo) return { start: startOfMonth(now), end: endOfMonth(now) }
-        return { start: startOfDay(parseISO(cFrom)), end: endOfDay(parseISO(cTo)) }
-    }
-  }
-  const range = computeRange(filterRange, customFrom, customTo)
-
-  const studentTx = [...(student.paymentHistory || [])]
-    .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
 
   const totalCollected = (student.paymentHistory || [])
     .filter(p => p.status !== 'deleted')
     .reduce((sum, p) => sum + p.amount, 0)
 
-  const totalDue = student.pendingAmount > 0
-    ? student.pendingAmount
-    : (student.status === 'expired' || student.status === 'due-soon')
-      ? student.fees
-      : 0
-
-  const recentRows = studentTx
-    .filter(p => {
-      try { return isWithinInterval(parseISO(p.date), range) } catch { return false }
-    })
-
-  const paidRows = studentTx
-    .filter(p => {
-      try { return isWithinInterval(parseISO(p.date), range) } catch { return false }
-    })
-    .filter(p => p.paymentType === 'full' || p.paymentType === 'advance')
-
-  const isPending = student.status === 'expired' || student.status === 'due-soon'
-  const isPartial = student.pendingAmount > 0
-
-  const handleVoid = async (entryId: string) => {
-    setIsVoiding(entryId)
-    try {
-      await voidPayment(entryId, student.id)
-      setVoidConfirmId(null)
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to void payment')
-    } finally {
-      setIsVoiding(null)
-    }
-  }
+  const totalDue = student.pendingAmount + (student.membershipReceiptId && (student.status === 'expired' || student.status === 'due-soon') ? student.fees : 0)
 
   const formatDateLabel = (dateStr: string) => {
+    if (!dateStr) return '—'
     try {
       return format(parseISO(dateStr), 'dd MMM yyyy')
     } catch {
       return dateStr
     }
-  }
-
-  const getDaysLabel = (s: Student): string => {
-    const today = new Date()
-    const due = parseISO(s.nextDueDate)
-    const diff = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    if (diff < 0) return `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? 's' : ''} overdue`
-    if (diff === 0) return 'Due today'
-    return `${diff} day${diff !== 1 ? 's' : ''} remaining`
   }
 
   const attendanceMap: Record<string, 'present' | 'absent'> = {}
@@ -222,7 +162,7 @@ export default function StudentProfileView({ student, batches = [], attendance =
         <div>
           <h1 className="text-2xl font-bold text-so-text">{student.name}</h1>
           <p className="text-so-muted text-sm mt-0.5">
-            Fee: ₹{student.fees.toLocaleString('en-IN')} • Valid Until: <span className="text-[#5278EA] font-semibold">{formatDate(student.nextDueDate)}</span> • <span className="capitalize">{getBatchName(student.currentBatch)}</span>
+            Default Fee: {formatCurrency(student.fees)} • Valid Until: <span className="text-so-accent font-semibold">{student.nextDueDate ? formatDate(student.nextDueDate) : 'No receipt yet'}</span> • <span className="capitalize">{getBatchName(student.currentBatch)}</span>
           </p>
         </div>
         <div className="ml-auto flex items-center gap-3">
@@ -241,6 +181,8 @@ export default function StudentProfileView({ student, batches = [], attendance =
               ? 'Off-Court'
               : student.status === 'due-soon'
               ? 'Due Soon'
+              : student.status === 'expired'
+              ? 'Overdue'
               : student.status.charAt(0).toUpperCase() + student.status.slice(1)}
           </span>
           <button
@@ -289,24 +231,47 @@ export default function StudentProfileView({ student, batches = [], attendance =
             )}
             <InfoRow icon={<Phone className="w-4 h-4" />} label="Alternate Number" value={student.alternatePhone || '-'} />
             <InfoRow icon={<Shield className="w-4 h-4" />} label="Guardian" value={student.guardianName || '-'} />
-            <InfoRow icon={<Mail className="w-4 h-4" />} label="Email" value={student.email || '-'} />
-            <InfoRow icon={<MapPin className="w-4 h-4" />} label="Address" value={student.address || '-'} />
           </div>
 
           <div className="border-t border-so-border my-6"></div>
 
           <h3 className="text-xs text-so-muted uppercase tracking-wider mb-4 mt-6">More Information</h3>
           <div className="grid grid-cols-2 gap-x-12 gap-y-4">
-            <InfoRow icon={<Calendar className="w-4 h-4" />} label="Date of Admission" value={formatDateLabel(student.startDate)} />
+            <InfoRow icon={<Calendar className="w-4 h-4" />} label="Joining Date" value={formatDateLabel(student.startDate)} />
             <InfoRow icon={<IndianRupee className="w-4 h-4" />} label="Fee" value={`₹ ${student.fees.toLocaleString('en-IN')}`} />
             <InfoRow icon={<Calendar className="w-4 h-4" />} label="Membership Start" value={formatDateLabel(student.membershipStartDate)} />
-            <InfoRow icon={<Calendar className="w-4 h-4" />} label="Valid Until" value={<span className="text-[#5278EA] font-semibold">{formatDateLabel(student.nextDueDate)}</span>} />
+            <InfoRow icon={<Calendar className="w-4 h-4" />} label="Valid Until" value={<span className="text-so-accent font-semibold">{formatDateLabel(student.nextDueDate)}</span>} />
             <InfoRow icon={<Users className="w-4 h-4" />} label="Current Batch" value={getBatchName(student.currentBatch)} />
             <InfoRow
               icon={<Compass className="w-4 h-4" />}
               label="Source"
               value={<span className="capitalize">{student.enrollmentSource ? student.enrollmentSource.replace('-', ' ') : '-'}</span>}
             />
+          </div>
+
+          <div className="mt-6 bg-so-surface border border-so-border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-so-text">Current Membership</h3>
+              {student.status !== 'inactive' && student.status !== 'dropout' && <button onClick={() => setRenewTarget(true)} className="flex items-center gap-2 bg-so-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm">Issue Fee Receipt</button>}
+            </div>
+            {student.membershipReceiptId ? <div className="text-sm text-so-text space-y-1">
+              <p>Coverage: {formatDateLabel(student.membershipStartDate)} to {formatDateLabel(student.nextDueDate)}</p>
+              <p>Outstanding balance: {formatCurrency(student.pendingAmount)}</p>
+              {canAdjustDueDate && <button onClick={() => setShowAdjust(value => !value)} className="px-4 py-2 border border-so-border text-so-muted rounded-lg text-sm font-medium hover:border-so-accent hover:text-so-text transition-colors">Adjust Due Date</button>}
+            </div> : <div className="text-sm text-so-muted"><p>No active coverage receipt. Coverage begins when a fee receipt is issued.</p>{student.pendingAmount > 0 && <p>Historical outstanding balance: {formatCurrency(student.pendingAmount)}</p>}</div>}
+            {showAdjust && student.membershipReceiptId && <div className="space-y-3">
+              <label className="text-xs font-medium text-so-muted mb-1.5 block">New Due Date</label>
+              <input type="date" value={adjustedDate} min={student.membershipStartDate} onChange={e => setAdjustedDate(e.target.value)} className="w-full bg-so-surface text-sm text-so-text placeholder:text-so-grey px-3 py-2.5 border border-so-border rounded-lg focus:outline-none focus:ring-1 focus:ring-so-accent focus:border-so-accent transition-colors" />
+              <label className="text-xs font-medium text-so-muted mb-1.5 block">Reason</label>
+              <input type="text" value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full bg-so-surface text-sm text-so-text placeholder:text-so-grey px-3 py-2.5 border border-so-border rounded-lg focus:outline-none focus:ring-1 focus:ring-so-accent focus:border-so-accent transition-colors" />
+              <button disabled={isAdjusting} onClick={async () => {
+                setIsAdjusting(true); setActionError('')
+                try { await adjustDueDate({ studentId: student.id, nextDueDate: adjustedDate, reason: adjustReason }); setShowAdjust(false); router.refresh() }
+                catch (err) { setActionError(err instanceof Error ? err.message : 'Could not adjust due date') }
+                finally { setIsAdjusting(false) }
+              }} className="flex items-center gap-2 bg-so-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50">{isAdjusting ? 'Saving...' : 'Save Adjustment'}</button>
+              {actionError && <p role="alert" className="text-sm text-so-red">{actionError}</p>}
+            </div>}
           </div>
 
           {student.internalNotes && (
@@ -344,397 +309,8 @@ export default function StudentProfileView({ student, batches = [], attendance =
             </div>
           </div>
 
-          {/* Transaction section */}
-          <div className="flex items-center justify-between mt-6 mb-4">
-            <div className="flex gap-1 p-1 bg-so-surface rounded-lg border border-so-border">
-              {(['recent', 'paid', 'pending', 'partial'] as TxTab[]).map(tab => {
-                const labels = { recent: 'Recent', paid: 'Paid', pending: 'Pending', partial: 'Partially Paid' }
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => setTxTab(tab)}
-                    className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      txTab === tab
-                        ? 'bg-so-accent text-white shadow-sm'
-                        : 'text-so-muted hover:text-so-text hover:bg-so-surface/80'
-                    }`}
-                  >
-                    {labels[tab]}
-                  </button>
-                )
-              })}
-            </div>
-
-            <button
-              onClick={() => setShowFilter(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-so-border rounded-lg text-xs text-so-muted hover:border-so-accent hover:text-so-text transition-colors"
-            >
-              <SlidersHorizontal className="w-3 h-3" />
-              Filter
-              {filterRange !== 'currentMonth' && <span className="w-1.5 h-1.5 rounded-full bg-so-accent" />}
-            </button>
-          </div>
-
-          {/* TX Tabs Content */}
-          <div className="bg-so-card border border-so-border rounded-xl shadow-sm overflow-hidden min-h-[300px]">
-            {txTab === 'recent' && (
-              <div>
-                {recentRows.length === 0 ? (
-                  <div className="py-20 flex flex-col items-center justify-center">
-                    <Receipt className="w-12 h-12 text-so-muted mb-4" strokeWidth={1.5} />
-                    <p className="text-so-text font-semibold">No transactions in this period</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-so-surface border-b border-so-border">
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Name</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Phone</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Date</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Amount</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Type</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Method</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-so-border">
-                        {recentRows.map(t => (
-                          <tr key={t.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
-                            <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{student.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-so-muted">{student.phone}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-so-text">{formatDateLabel(t.date)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className={`font-semibold ${t.status === 'deleted' ? 'text-so-muted line-through' : 'text-so-emerald'}`}>
-                                ₹ {t.amount.toLocaleString('en-IN')}
-                              </div>
-                              {t.paymentType === 'partial' && t.remainingAmount > 0 && t.status !== 'deleted' && (
-                                <div className="text-amber-600 text-xs mt-0.5">{t.remainingAmount.toLocaleString('en-IN')} remaining</div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              {t.paymentType === 'full' && <span className="text-xs font-medium text-so-emerald">Full</span>}
-                              {t.paymentType === 'partial' && <span className="text-xs font-medium text-amber-500">Partial</span>}
-                              {t.paymentType === 'advance' && <span className="text-xs font-medium text-blue-600">Advance</span>}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">{t.paymentMethod}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {txTab === 'paid' && (
-              <div>
-                <div className="px-6 py-3 border-b border-so-border bg-so-surface flex items-center gap-4 text-sm text-so-muted">
-                  <span>{paidRows.filter(t => t.status !== 'deleted').length} transactions</span>
-                  <span>•</span>
-                  <span className="text-so-emerald font-medium">
-                    ₹ {paidRows.filter(t => t.status !== 'deleted').reduce((s, t) => s + t.amount, 0).toLocaleString('en-IN')} collected
-                  </span>
-                  <span>•</span>
-                  <span className="text-so-red">
-                    {paidRows.filter(t => t.status === 'deleted').length} voided
-                  </span>
-                </div>
-                {paidRows.length === 0 ? (
-                  <div className="py-20 flex flex-col items-center justify-center">
-                    <CheckCircle className="w-12 h-12 text-so-muted mb-4" strokeWidth={1.5} />
-                    <p className="text-so-text font-semibold">No paid transactions in this period</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-so-surface border-b border-so-border">
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Name</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Phone</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Date</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Amount</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Mode</th>
-                          <th className="text-right px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-so-border">
-                        {paidRows.map(t => (
-                          <tr key={t.id} className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
-                            <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{student.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-so-muted">{student.phone}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-so-text">{formatDateLabel(t.date)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className={`font-semibold ${t.status === 'deleted' ? 'text-so-muted line-through' : 'text-so-emerald'}`}>
-                                ₹ {t.amount.toLocaleString('en-IN')}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">{t.paymentMethod}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right">
-                              {t.status !== 'deleted' ? (
-                                voidConfirmId === t.id ? (
-                                  <div className="flex items-center justify-end gap-2">
-                                    <span className="text-xs text-so-muted">Void this?</span>
-                                    <button
-                                      disabled={isVoiding === t.id}
-                                      onClick={() => handleVoid(t.id)}
-                                      className="text-xs px-2 py-1 bg-so-red text-white rounded-md hover:bg-red-600 transition-colors inline-flex items-center gap-1"
-                                    >
-                                      {isVoiding === t.id && <Loader2 className="w-3 h-3 animate-spin" />}
-                                      Yes
-                                    </button>
-                                    <button
-                                      disabled={isVoiding === t.id}
-                                      onClick={() => setVoidConfirmId(null)}
-                                      className="text-xs px-2 py-1 border border-so-border rounded-md text-so-muted hover:text-so-text transition-colors"
-                                    >
-                                      No
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => setVoidConfirmId(t.id)}
-                                    className="p-1.5 inline-flex rounded-md text-so-muted hover:text-so-red hover:bg-so-surface transition-colors"
-                                    title="Void Payment"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )
-                              ) : (
-                                <span className="text-xs text-so-red italic">Voided</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {txTab === 'pending' && (
-              <div>
-                {!isPending ? (
-                  <div className="py-20 flex flex-col items-center justify-center">
-                    <CheckCircle className="w-12 h-12 text-so-emerald mb-4" strokeWidth={1.5} />
-                    <p className="text-so-text font-semibold">No pending payments — student is up to date</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-so-surface border-b border-so-border">
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Student</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Phone</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Due Date</th>
-                          <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Amount</th>
-                          <th className="text-right px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-so-border">
-                        <tr className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-so-text">{student.name}</span>
-                              {student.status === 'expired' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-                                  <AlertCircle className="w-3 h-3" />
-                                  Overdue
-                                </span>
-                              ) : student.status === 'due-soon' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200">
-                                  <Clock className="w-3 h-3" />
-                                  Due Soon
-                                </span>
-                              ) : null}
-                            </div>
-                            <p
-                              className={`text-xs mt-0.5 font-medium ${
-                                student.status === 'expired' ? 'text-red-500' : 'text-amber-500'
-                              }`}
-                            >
-                              {getDaysLabel(student)}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-so-muted">{student.phone}</td>
-                          <td
-                            className={`px-6 py-4 whitespace-nowrap font-medium ${
-                              student.status === 'expired' ? 'text-so-red' : 'text-so-yellow'
-                            }`}
-                          >
-                            {formatDateLabel(student.nextDueDate)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-so-emerald font-semibold">
-                            ₹ {student.fees.toLocaleString('en-IN')}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
-                            <div className="flex justify-end">
-                              <button
-                                onClick={() => setRenewTarget(true)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-so-accent text-white rounded-md text-xs font-medium hover:opacity-90 transition-opacity"
-                              >
-                                <RefreshCw className="w-3 h-3" />
-                                Collect Payment
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {txTab === 'partial' && (
-              <div>
-                {!isPartial ? (
-                  <div className="py-20 flex flex-col items-center justify-center">
-                    <CheckCircle className="w-12 h-12 text-so-emerald mb-4" strokeWidth={1.5} />
-                    <p className="text-so-text font-semibold">No partial payments outstanding</p>
-                  </div>
-                ) : (
-                  (() => {
-                    const latestPartial = (student.paymentHistory || [])
-                      .filter(p => p.paymentType === 'partial' && p.status !== 'deleted')
-                      .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())[0]
-
-                    return (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-so-surface border-b border-so-border">
-                              <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Name</th>
-                              <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Phone</th>
-                              <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Date</th>
-                              <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Paid</th>
-                              <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Remaining</th>
-                              <th className="text-left px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Mode</th>
-                              <th className="text-right px-6 py-4 text-xs font-semibold text-so-muted uppercase tracking-wider">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-so-border">
-                            <tr className="bg-so-card hover:bg-so-surface/60 border-b border-so-border transition-colors">
-                              <td className="px-6 py-4 whitespace-nowrap text-so-text font-medium">{student.name}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-so-muted">{student.phone}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-so-text">
-                                {latestPartial ? formatDateLabel(latestPartial.date) : '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-so-emerald font-semibold">
-                                {latestPartial ? `₹ ${latestPartial.amount.toLocaleString('en-IN')}` : '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-amber-600 font-semibold">
-                                ₹ {student.pendingAmount.toLocaleString('en-IN')}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-so-muted capitalize">
-                                {latestPartial?.paymentMethod || '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <div className="flex justify-end">
-                                  <button
-                                    onClick={() => setCollectRemaining(true)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-xs font-medium hover:bg-amber-100 transition-colors"
-                                  >
-                                    <Wallet className="w-3 h-3" />
-                                    Collect Remaining
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    )
-                  })()
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Filter Overlay */}
-      {showFilter && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowFilter(false)} />
-          <div className="relative w-72 h-full bg-so-card border-l border-so-border flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-so-border">
-              <span className="font-semibold text-so-text">Filter Transactions</span>
-              <button onClick={() => setShowFilter(false)} className="p-1 hover:bg-so-surface rounded">
-                <X className="w-4 h-4 text-so-muted" />
-              </button>
-            </div>
-
-            <div className="p-4 flex-1">
-              <p className="text-xs text-so-muted uppercase tracking-wider mb-3">Date Range</p>
-              {[
-                { value: 'currentMonth', label: 'Current Month' },
-                { value: 'lastMonth', label: 'Last Month' },
-                { value: 'custom', label: 'Custom Date Range' },
-              ].map(opt => (
-                <label key={opt.value} className="flex items-center gap-3 py-2 cursor-pointer group">
-                  <div
-                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                      filterRange === opt.value ? 'border-so-accent' : 'border-so-border'
-                    }`}
-                  >
-                    {filterRange === opt.value && <div className="w-2 h-2 rounded-full bg-so-accent" />}
-                  </div>
-                  <span
-                    className={`text-sm transition-colors ${
-                      filterRange === opt.value ? 'text-so-text' : 'text-so-muted group-hover:text-so-text'
-                    }`}
-                  >
-                    {opt.label}
-                  </span>
-                  <input
-                    type="radio"
-                    className="sr-only"
-                    checked={filterRange === opt.value}
-                    onChange={() => setFilterRange(opt.value as FilterRange)}
-                  />
-                </label>
-              ))}
-
-              {filterRange === 'custom' && (
-                <div className="mt-3 space-y-2">
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={e => setCustomFrom(e.target.value)}
-                    max={customTo || format(new Date(), 'yyyy-MM-dd')}
-                    className="w-full bg-white border border-so-border rounded-md px-3 py-1.5 text-sm text-so-text focus:outline-none focus:border-so-accent"
-                  />
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={e => setCustomTo(e.target.value)}
-                    min={customFrom}
-                    max={format(new Date(), 'yyyy-MM-dd')}
-                    className="w-full bg-white border border-so-border rounded-md px-3 py-1.5 text-sm text-so-text focus:outline-none focus:border-so-accent"
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-so-border flex gap-3">
-              <button
-                onClick={() => {
-                  setFilterRange('currentMonth')
-                  setCustomFrom('')
-                  setCustomTo('')
-                }}
-                className="flex-1 py-2 border border-so-border rounded-lg text-sm text-so-muted hover:text-so-text transition-colors"
-              >
-                Clear
-              </button>
-              <button
-                onClick={() => setShowFilter(false)}
-                className="flex-1 py-2 bg-so-accent text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                Apply Filter
-              </button>
-            </div>
+          <div className="mt-6">
+            <CoachingTransactions key={student.id} students={[student]} scope={{ kind: 'student', studentId: student.id }} />
           </div>
         </div>
       )}
@@ -870,22 +446,12 @@ export default function StudentProfileView({ student, batches = [], attendance =
 
       {/* Modals */}
       {renewTarget && (
-        <RenewModal
+        <FeeReceiptModal
           student={student}
-          batches={batches}
           onClose={() => setRenewTarget(false)}
-          onConfirm={() => {
+          onSuccess={() => {
             setRenewTarget(false)
-          }}
-        />
-      )}
-
-      {collectRemaining && (
-        <CollectRemainingModal
-          student={student}
-          onClose={() => setCollectRemaining(false)}
-          onConfirm={() => {
-            setCollectRemaining(false)
+            router.refresh()
           }}
         />
       )}

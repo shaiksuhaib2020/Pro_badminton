@@ -5,14 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Search, Plus, Users, BadgeCheck, MoreVertical, CheckCircle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Link from 'next/link'
-import { 
-  mockSettings,
-  mockCourtPlans,
-  mockCourtMemberships, 
-  CourtMembership,
-  getMembershipDisplayLabel,
-  getMembershipPeopleCount
-} from '@/lib/mock-data'
+import { mockSettings, mockCourtPlans, mockCourtMemberships } from '@/lib/mock-data'
+import type { CourtMembership } from '@/lib/types/court'
+import { getMembershipDisplayLabel, getMembershipPeopleCount } from '@/lib/court-utils'
 import AddCourtMembershipModal from '@/components/court/AddCourtMembershipModal'
 import EditCourtMembershipModal from '@/components/court/EditCourtMembershipModal'
 

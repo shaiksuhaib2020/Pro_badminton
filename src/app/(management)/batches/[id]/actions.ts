@@ -38,6 +38,7 @@ export async function saveAttendance(
   if (error) throw new Error(error.message)
 
   revalidatePath(`/batches/${batchId}`)
+  revalidatePath('/dashboard')
   if (resolvedBatchId !== batchId) {
     revalidatePath(`/batches/${resolvedBatchId}`)
   }

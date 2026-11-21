@@ -3,7 +3,16 @@
 import { revalidatePath } from 'next/cache'
 import { getServerSession } from '@/lib/supabase/auth-context'
 import { getBatches } from '@/lib/queries/batches'
-import type { Batch } from '@/lib/mock-data'
+import type { Batch } from '@/lib/types/batches'
+
+function batchFeePaise(fee: number | undefined): number | null {
+  if (fee === undefined || fee === null) return null
+  const value = fee * 100
+  if (!Number.isFinite(fee) || fee < 0 || value > 2147483647 || Math.abs(Math.round(value) - value) > 0.000001) {
+    throw new Error('Enter a valid batch fee with at most two decimal places')
+  }
+  return Math.round(value)
+}
 
 export async function getBatchesAction(): Promise<Batch[]> {
   return getBatches()
@@ -45,7 +54,7 @@ export async function createBatch(data: {
       academy_id: academyId,
       name: trimmedName,
       days: data.days as any,
-      fees: data.fees !== undefined && data.fees !== null ? data.fees : null,
+      fees: batchFeePaise(data.fees),
       description: data.description?.trim() || null,
       branch_id: data.branchId || null,
       is_active: true,
@@ -58,6 +67,7 @@ export async function createBatch(data: {
   }
 
   revalidatePath('/batches')
+  revalidatePath('/dashboard')
   revalidatePath('/students')
   return { id: batch.id }
 }
@@ -100,7 +110,7 @@ export async function updateBatch(
     .update({
       name: trimmedName,
       days: data.days as any,
-      fees: data.fees !== undefined && data.fees !== null ? data.fees : null,
+      fees: batchFeePaise(data.fees),
       description: data.description?.trim() || null,
     })
     .eq('id', id)
@@ -110,6 +120,7 @@ export async function updateBatch(
   }
 
   revalidatePath('/batches')
+  revalidatePath('/dashboard')
   revalidatePath(`/batches/${id}`)
   revalidatePath('/students')
   return { success: true }
@@ -139,6 +150,7 @@ export async function deleteBatch(id: string) {
   }
 
   revalidatePath('/batches')
+  revalidatePath('/dashboard')
   revalidatePath('/students')
   return { success: true }
 }

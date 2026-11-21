@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { X, Minus, Plus, AlertCircle, SplitSquareHorizontal } from 'lucide-react'
-import { CourtMembership } from '@/lib/mock-data'
+import type { CourtMembership } from '@/lib/types/court'
 import { format, addMonths, parseISO, addDays } from 'date-fns'
 
 interface Props {

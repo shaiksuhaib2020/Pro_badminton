@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { mockCourtPlans, CourtMembership, getMembershipDisplayLabel } from '@/lib/mock-data'
+import { mockCourtPlans } from '@/lib/mock-data'
+import type { CourtMembership } from '@/lib/types/court'
+import { getMembershipDisplayLabel } from '@/lib/court-utils'
 import { format } from 'date-fns'
 
 interface Props {

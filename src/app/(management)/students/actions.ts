@@ -1,18 +1,73 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { format } from 'date-fns'
+import { format, isValid, parseISO } from 'date-fns'
 import { getServerSession } from '@/lib/supabase/auth-context'
-import { deriveStudentStatus } from '@/lib/utils'
-import type { Database } from '@/lib/supabase/database.types'
+import { getTodayIST } from '@/lib/utils'
 import { getStudents } from '@/lib/queries/students'
-import type { Student } from '@/lib/mock-data'
+import type { Database } from '@/lib/supabase/database.types'
+import type { Student, EnrollmentDay } from '@/lib/types/students'
+import type { PaymentMethod } from '@/lib/types/payments'
+
+type StudentUpdate = Database['public']['Tables']['students']['Update']
+type EnrollmentSource = Database['public']['Enums']['enrollment_source']
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function paise(rupees: number): number {
+  const raw = rupees * 100
+  if (!Number.isFinite(rupees) || rupees < 0 || raw > 2147483647 || Math.abs(Math.round(raw) - raw) > 0.000001) {
+    throw new Error('Enter a valid amount in rupees, with at most two decimal places')
+  }
+  return Math.round(rupees * 100)
+}
+
+function enrollmentDetails(data: { address?: string; email?: string; enrollDays?: EnrollmentDay[] }) {
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  if (data.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) throw new Error('Enter a valid email address')
+  if (data.enrollDays?.some(day => !days.includes(day))) throw new Error('Invalid enrollment day')
+  return { address: data.address?.trim() || null, email: data.email?.trim() || null, enroll_days: [...new Set(data.enrollDays ?? [])] }
+}
+
+function checkPaymentMethod(method: PaymentMethod | null) {
+  if (method !== null && !['cash', 'upi', 'card', 'other'].includes(method)) throw new Error('Invalid payment mode')
+}
+
+function checkDate(date: string, label: string) {
+  const parsed = parseISO(date)
+  if (!DATE_PATTERN.test(date) || !isValid(parsed) || format(parsed, 'yyyy-MM-dd') !== date) {
+    throw new Error(`${label} must be a valid date`)
+  }
+}
+
+function revalidateStudent(studentId?: string) {
+  revalidatePath('/students')
+  revalidatePath('/dashboard')
+  revalidatePath('/reports')
+  revalidatePath('/transactions')
+  revalidatePath('/batches')
+  revalidatePath('/batches/[id]', 'page')
+  if (studentId) revalidatePath(`/students/${studentId}`)
+}
 
 export async function getStudentsAction(): Promise<Student[]> {
   return getStudents()
 }
 
-type StudentUpdate = Database['public']['Tables']['students']['Update']
+async function resolveBatch(
+  supabase: Awaited<ReturnType<typeof getServerSession>>['supabase'],
+  academyId: string,
+  batch: string | undefined,
+): Promise<string | null> {
+  if (!batch) return null
+  const query = supabase.from('batches').select('id').eq('academy_id', academyId)
+  const { data, error } = UUID_PATTERN.test(batch)
+    ? await query.eq('id', batch).maybeSingle()
+    : await query.eq('name', batch).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('Selected batch was not found')
+  return data.id
+}
 
 export async function createStudent(data: {
   name: string
@@ -21,283 +76,222 @@ export async function createStudent(data: {
   guardianName?: string
   address?: string
   email?: string
+  enrollDays?: EnrollmentDay[]
   batch?: string
-  fees: number
-  startDate: string
-  endDate: string
-  joiningDate?: string
-  amountPaying: number
-  partialDue?: number
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
+  fees?: number
+  joiningDate: string
   dateOfBirth?: string
-  enrollmentSource?: 'walk-in' | 'referral' | 'social-media' | 'other'
+  enrollmentSource?: EnrollmentSource
   internalNotes?: string
-  note?: string
 }) {
-  const { supabase, academyId } = await getServerSession()
+  const { supabase, academyId, role } = await getServerSession()
+  if (!['owner', 'manager', 'receptionist'].includes(role)) throw new Error('Not authorized to enroll students')
+  if (!data.name.trim()) throw new Error('Student name is required')
+  if (!/^[0-9]{10}$/.test(data.phone)) throw new Error('A 10-digit phone number is required')
+  checkDate(data.joiningDate, 'Joining date')
+  if (data.dateOfBirth) checkDate(data.dateOfBirth, 'Date of birth')
 
-  // 1. Duplicate phone check
-  const { data: existing } = await supabase
-    .from('students')
-    .select('id')
-    .eq('phone', data.phone)
-    .maybeSingle()
+  const { data: existing, error: duplicateError } = await supabase.from('students')
+    .select('id').eq('academy_id', academyId).eq('phone', Number(data.phone)).maybeSingle()
+  if (duplicateError) throw new Error(duplicateError.message)
   if (existing) throw new Error('DUPLICATE_PHONE')
 
-  const nextDueDate = data.endDate
-  const status = deriveStudentStatus(data.endDate)
-
-  // Resolve batch_id if provided
-  let batchId: string | null = null
-  if (data.batch) {
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.batch)
-    if (isUUID) {
-      batchId = data.batch
-    } else {
-      const { data: b } = await supabase.from('batches').select('id').eq('name', data.batch).maybeSingle()
-      if (b) batchId = b.id
-    }
-  }
-
-  // 3. Insert student
-  const effectiveJoiningDate = data.joiningDate && data.joiningDate.trim() ? data.joiningDate.trim() : data.startDate
-  const pendingAmount = data.partialDue ?? 0
-
-  const insertPayload: any = {
+  const batchId = await resolveBatch(supabase, academyId, data.batch)
+  const { data: student, error } = await supabase.from('students').insert({
     academy_id: academyId,
     name: data.name.trim(),
-    phone: data.phone.trim(),
+    phone: Number(data.phone),
     alternate_phone: data.alternatePhone?.trim() || null,
     guardian_name: data.guardianName?.trim() || null,
+    ...enrollmentDetails(data),
     batch_id: batchId,
-    fees: data.fees,
-    start_date: effectiveJoiningDate,
-    next_due_date: nextDueDate,
-    status: status,
+    fees: paise(data.fees ?? 0),
+    joining_date: data.joiningDate,
+    status: 'active',
     date_of_birth: data.dateOfBirth || null,
-    enrollment_source: data.enrollmentSource || null,
-    internal_notes: data.internalNotes?.trim() || '',
-    pending_amount: pendingAmount,
-  }
-
-  const { data: student, error: studentErr } = await supabase
-    .from('students')
-    .insert(insertPayload)
-    .select('id')
-    .single()
-
-  if (studentErr) throw new Error(studentErr.message)
-
-  // 4. Insert first payment
-  const paymentType = pendingAmount > 0 ? 'partial' : 'full'
-
-  const { error: payErr } = await supabase.from('student_payments').insert({
-    student_id: student.id,
-    academy_id: academyId,
-    date: data.startDate,
-    amount: data.amountPaying,
-    remaining_amount: pendingAmount,
-    payment_type: paymentType,
-    months_covered: 1,
-    payment_method: data.paymentMethod,
-    status: 'active',
-    note: data.note ?? '',
-  })
-
-  if (payErr) throw new Error(payErr.message)
-
-  revalidatePath('/students')
+    enrollment_source: data.enrollmentSource ?? null,
+    internal_notes: data.internalNotes?.trim() ?? '',
+  }).select('id').single()
+  if (error) throw new Error(error.message)
+  revalidateStudent(student.id)
   return { id: student.id }
-}
-
-export async function renewStudent(data: {
-  studentId: string
-  newEndDate: string
-  amountPaying: number
-  renewalFee: number
-  partialDue?: number
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
-  note?: string
-  newBatch?: string
-}) {
-  const { supabase, academyId } = await getServerSession()
-
-  const { data: student, error: sErr } = await supabase
-    .from('students')
-    .select('id, next_due_date')
-    .eq('id', data.studentId)
-    .single()
-  if (sErr || !student) throw new Error('Student not found')
-
-  const prevNextDueDate = student.next_due_date
-  const newNextDueDate = data.newEndDate
-  const pendingAmount = data.partialDue ?? 0
-  const paymentType = pendingAmount > 0 ? 'partial' : 'full'
-
-  const { error: payErr } = await supabase.from('student_payments').insert({
-    student_id: data.studentId,
-    academy_id: academyId,
-    date: format(new Date(), 'yyyy-MM-dd'),
-    amount: data.amountPaying,
-    remaining_amount: pendingAmount,
-    payment_type: paymentType,
-    months_covered: 1,
-    payment_method: data.paymentMethod,
-    status: 'active',
-    note: data.note ?? '',
-  })
-  if (payErr) throw new Error(payErr.message)
-
-  let batchUpdate: { batch_id?: string | null } = {}
-  if (data.newBatch) {
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.newBatch)
-    if (isUUID) {
-      batchUpdate.batch_id = data.newBatch
-    } else {
-      const { data: b } = await supabase.from('batches').select('id').eq('name', data.newBatch).maybeSingle()
-      if (b) batchUpdate.batch_id = b.id
-    }
-  }
-
-  const { error: updateErr } = await (supabase.from('students') as any).update({
-    next_due_date: newNextDueDate,
-    fees: data.renewalFee,
-    pending_amount: pendingAmount,
-    status: deriveStudentStatus(newNextDueDate),
-    ...batchUpdate,
-  }).eq('id', data.studentId)
-  if (updateErr) throw new Error(updateErr.message)
-
-  revalidatePath('/students')
-  revalidatePath(`/students/${data.studentId}`)
-}
-
-export async function dropoutStudent(data: { studentId: string; reason: string }) {
-  const { supabase } = await getServerSession()
-
-  // Trigger skips 'dropout' — must set status explicitly
-  const { error: studentErr } = await supabase.from('students').update({
-    status: 'dropout',
-    dropout_reason: data.reason,
-    dropout_date: format(new Date(), 'yyyy-MM-dd'),
-  }).eq('id', data.studentId)
-  if (studentErr) throw new Error(studentErr.message)
-
-  // Mark all active payments inactive
-  const { error: payErr } = await supabase.from('student_payments')
-    .update({ status: 'inactive' })
-    .eq('student_id', data.studentId)
-    .eq('status', 'active')
-  if (payErr) throw new Error(payErr.message)
-
-  revalidatePath('/students')
-  revalidatePath(`/students/${data.studentId}`)
 }
 
 export async function reEnrollStudent(data: {
   studentId: string
-  fees: number
-  startDate: string
-  endDate: string
-  amountPaying: number
-  partialDue?: number
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
+  name: string
+  phone: string
+  alternatePhone?: string
+  guardianName?: string
+  address?: string
+  email?: string
+  enrollDays?: EnrollmentDay[]
   currentBatch?: string
-  note?: string
+  fees?: number
+  dateOfBirth?: string
+  enrollmentSource?: EnrollmentSource
+  internalNotes?: string
 }) {
-  const { supabase, academyId } = await getServerSession()
-  const pendingAmount = data.partialDue ?? 0
-  const paymentType = pendingAmount > 0 ? 'partial' : 'full'
+  const { supabase, academyId, role } = await getServerSession()
+  if (!['owner', 'manager', 'receptionist'].includes(role)) throw new Error('Not authorized to re-enroll students')
+  if (!data.name.trim() || !/^[0-9]{10}$/.test(data.phone)) throw new Error('Name and 10-digit phone are required')
+  if (data.dateOfBirth) checkDate(data.dateOfBirth, 'Date of birth')
+  const batchId = await resolveBatch(supabase, academyId, data.currentBatch)
+  const { data: student, error: readError } = await supabase.from('students')
+    .select('status').eq('academy_id', academyId).eq('id', data.studentId).single()
+  if (readError || !student) throw new Error('Student not found')
+  if (student.status !== 'inactive' && student.status !== 'dropout') throw new Error('Only inactive students can be re-enrolled')
 
-  let batchUpdate: { batch_id?: string | null } = {}
-  if (data.currentBatch) {
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.currentBatch)
-    if (isUUID) {
-      batchUpdate.batch_id = data.currentBatch
-    } else {
-      const { data: b } = await supabase.from('batches').select('id').eq('name', data.currentBatch).maybeSingle()
-      if (b) batchUpdate.batch_id = b.id
-    }
-  }
-
-  // Update student row (start_date is immutable in DB, do not update it)
-  const { error: sErr } = await (supabase.from('students') as any).update({
-    status: deriveStudentStatus(data.endDate),
-    next_due_date: data.endDate,
-    fees: data.fees,
-    pending_amount: pendingAmount,
+  const { error } = await supabase.from('students').update({
+    name: data.name.trim(),
+    phone: Number(data.phone),
+    alternate_phone: data.alternatePhone?.trim() || null,
+    guardian_name: data.guardianName?.trim() || null,
+    ...enrollmentDetails(data),
+    batch_id: batchId,
+    fees: paise(data.fees ?? 0),
+    date_of_birth: data.dateOfBirth || null,
+    enrollment_source: data.enrollmentSource ?? null,
+    internal_notes: data.internalNotes?.trim() ?? '',
+    status: 'active',
     dropout_reason: null,
     dropout_date: null,
-    ...batchUpdate,
-  }).eq('id', data.studentId)
-  if (sErr) throw new Error(sErr.message)
-
-  const { error: payErr } = await supabase.from('student_payments').insert({
-    student_id: data.studentId,
-    academy_id: academyId,
-    date: data.startDate,
-    amount: data.amountPaying,
-    remaining_amount: pendingAmount,
-    payment_type: paymentType,
-    months_covered: 1,
-    payment_method: data.paymentMethod,
-    status: 'active',
-    note: data.note ?? '',
-  })
-  if (payErr) throw new Error(payErr.message)
-
-  revalidatePath('/students')
-  revalidatePath(`/students/${data.studentId}`)
-}
-
-export async function deactivateStudent(studentId: string) {
-  const { supabase } = await getServerSession()
-  const { error } = await supabase.from('students').update({ status: 'inactive' }).eq('id', studentId)
+  }).eq('academy_id', academyId).eq('id', data.studentId)
   if (error) throw new Error(error.message)
-  revalidatePath('/students')
-  revalidatePath(`/students/${studentId}`)
+  revalidateStudent(data.studentId)
 }
 
-export async function activateStudent(studentId: string) {
-  const { supabase } = await getServerSession()
-  const { error } = await supabase.from('students').update({ status: 'active' }).eq('id', studentId)
-  if (error) throw new Error(error.message)
-  revalidatePath('/students')
-  revalidatePath(`/students/${studentId}`)
-}
-
-export async function collectRemaining(studentId: string, data: {
-  amount: number
-  paymentMethod: 'cash' | 'upi' | 'card' | 'other'
+export async function createFeeReceipt(data: {
+  studentId: string
+  totalFee: number
+  amountPaying: number
+  startDate: string
+  nextDueDate: string
+  paymentDate: string
+  paymentMethod: PaymentMethod | null
+  transactionId?: string
   note?: string
 }) {
-  const { supabase, academyId } = await getServerSession()
+  const { supabase, academyId, role } = await getServerSession()
+  if (!['owner', 'manager', 'accountant', 'receptionist'].includes(role)) throw new Error('Not authorized to collect fees')
+  checkDate(data.startDate, 'Coverage start date')
+  checkDate(data.nextDueDate, 'Next due date')
+  checkDate(data.paymentDate, 'Payment date')
+  checkPaymentMethod(data.paymentMethod)
+  if (data.nextDueDate <= data.startDate) throw new Error('Next due date must be after coverage start')
+  const total = paise(data.totalFee)
+  const paying = paise(data.amountPaying)
+  if (total <= 0 || paying <= 0 || paying > total) throw new Error('Amount received must be greater than zero and no more than the fee')
+  const { data: student, error: studentError } = await supabase.from('students')
+    .select('status').eq('academy_id', academyId).eq('id', data.studentId).single()
+  if (studentError || !student) throw new Error('Student not found')
+  if (student.status === 'inactive' || student.status === 'dropout') throw new Error('Re-enroll the student before collecting a fee')
+
   const { error } = await supabase.from('student_payments').insert({
-    student_id: studentId,
     academy_id: academyId,
-    date: format(new Date(), 'yyyy-MM-dd'),
-    amount: data.amount,
-    remaining_amount: 0,
-    payment_type: 'full',
-    months_covered: 1,
+    student_id: data.studentId,
+    date: data.paymentDate,
+    amount: paying,
+    remaining_amount: total - paying,
+    payment_type: paying < total ? 'partial' : 'full',
+    start_date: data.startDate,
+    next_due_date: data.nextDueDate,
     payment_method: data.paymentMethod,
+    transaction_id: data.transactionId?.trim() || null,
     status: 'active',
-    note: data.note ?? '',
+    note: data.note?.trim() ?? '',
   })
   if (error) throw new Error(error.message)
-  revalidatePath('/students')
-  revalidatePath(`/students/${studentId}`)
+  revalidateStudent(data.studentId)
+}
+
+export async function settlePendingDue(data: {
+  studentId: string
+  receiptId: string
+  amount: number
+  paymentDate: string
+  paymentMethod: PaymentMethod
+  transactionId?: string
+  note?: string
+}) {
+  const { supabase, academyId, role } = await getServerSession()
+  if (!['owner', 'manager', 'accountant', 'receptionist'].includes(role)) throw new Error('Not authorized to collect fees')
+  checkDate(data.paymentDate, 'Payment date')
+  checkPaymentMethod(data.paymentMethod)
+  const amount = paise(data.amount)
+  if (amount <= 0) throw new Error('Clearance amount must be greater than zero')
+  const { data: target, error: targetError } = await supabase.from('student_payments')
+    .select('remaining_amount, status, payment_type')
+    .eq('academy_id', academyId).eq('student_id', data.studentId).eq('id', data.receiptId).single()
+  if (targetError || !target) throw new Error('Original receipt not found')
+  if (target.status === 'deleted' || target.payment_type === 'due_clearance' || amount !== target.remaining_amount) {
+    throw new Error('Outstanding balance changed. Refresh and try again.')
+  }
+  const { error } = await supabase.rpc('record_student_due_clearance', {
+    p_student_id: data.studentId,
+    p_receipt_id: data.receiptId,
+    p_amount: amount,
+    p_date: data.paymentDate,
+    p_payment_method: data.paymentMethod,
+    p_note: data.note?.trim() ?? '',
+    p_transaction_id: data.transactionId?.trim() || null,
+  })
+  if (error) throw new Error(error.message)
+  revalidateStudent(data.studentId)
 }
 
 export async function voidPayment(paymentId: string, studentId?: string) {
-  const { supabase } = await getServerSession()
-  const { error } = await supabase
-    .from('student_payments')
+  const { supabase, academyId, role } = await getServerSession()
+  if (!['owner', 'manager', 'accountant'].includes(role)) throw new Error('Not authorized to void receipts')
+  const { data, error } = await supabase.from('student_payments')
     .update({ status: 'deleted' })
-    .eq('id', paymentId)
+    .eq('academy_id', academyId).eq('id', paymentId).neq('status', 'deleted')
+    .select('student_id').single()
+  if (error || !data) throw new Error(error?.message ?? 'Receipt not found')
+  revalidateStudent(studentId ?? data.student_id)
+}
+
+export async function adjustDueDate(data: { studentId: string; nextDueDate: string; reason: string }) {
+  const { supabase, role } = await getServerSession()
+  if (role !== 'owner' && role !== 'manager') throw new Error('Only owners and managers can adjust due dates')
+  checkDate(data.nextDueDate, 'Next due date')
+  if (!data.reason.trim()) throw new Error('A reason is required')
+  // The migration creates this RPC. It locks and validates the latest receipt before changing its date.
+  const { error } = await supabase.rpc('adjust_student_receipt_due_date' as never, {
+    p_student_id: data.studentId,
+    p_next_due_date: data.nextDueDate,
+    p_reason: data.reason.trim(),
+  } as never)
   if (error) throw new Error(error.message)
-  revalidatePath('/students')
-  if (studentId) revalidatePath(`/students/${studentId}`)
+  revalidateStudent(data.studentId)
+}
+
+export async function dropoutStudent(data: { studentId: string; reason: string }) {
+  const { supabase, academyId, role } = await getServerSession()
+  if (role !== 'owner' && role !== 'manager') throw new Error('Not authorized to mark dropouts')
+  if (!data.reason.trim()) throw new Error('A dropout reason is required')
+  const { error } = await supabase.from('students').update({
+    status: 'dropout', dropout_reason: data.reason.trim(), dropout_date: getTodayIST(),
+  }).eq('academy_id', academyId).eq('id', data.studentId)
+  if (error) throw new Error(error.message)
+  const { error: paymentsError } = await supabase.from('student_payments').update({ status: 'inactive' })
+    .eq('academy_id', academyId).eq('student_id', data.studentId).eq('status', 'active')
+  if (paymentsError) throw new Error(paymentsError.message)
+  revalidateStudent(data.studentId)
+}
+
+export async function deactivateStudent(studentId: string) {
+  const { supabase, academyId } = await getServerSession()
+  const { error } = await supabase.from('students').update({ status: 'inactive' }).eq('academy_id', academyId).eq('id', studentId)
+  if (error) throw new Error(error.message)
+  revalidateStudent(studentId)
+}
+
+export async function activateStudent(studentId: string) {
+  const { supabase, academyId } = await getServerSession()
+  const { error } = await supabase.from('students').update({ status: 'active' }).eq('academy_id', academyId).eq('id', studentId)
+  if (error) throw new Error(error.message)
+  revalidateStudent(studentId)
 }
 
 export async function updateStudent(id: string, data: {
@@ -307,60 +301,36 @@ export async function updateStudent(id: string, data: {
   guardianName?: string
   batchId?: string
   dateOfBirth?: string
-  enrollmentSource?: 'walk-in' | 'referral' | 'social-media' | 'other'
+  enrollmentSource?: EnrollmentSource
   internalNotes?: string
   fees?: number
-  membershipStartDate?: string
-  nextDueDate?: string
 }) {
-  const { supabase } = await getServerSession()
-
-  let batchUpdate: { batch_id?: string | null } = {}
-  if (data.batchId !== undefined) {
-    if (!data.batchId) {
-      batchUpdate.batch_id = null
-    } else {
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.batchId)
-      if (isUUID) {
-        batchUpdate.batch_id = data.batchId
-      } else {
-        const { data: b } = await supabase.from('batches').select('id').eq('name', data.batchId).maybeSingle()
-        if (b) batchUpdate.batch_id = b.id
-      }
-    }
+  const { supabase, academyId } = await getServerSession()
+  const payload: StudentUpdate = {}
+  if (data.name !== undefined) payload.name = data.name.trim()
+  if (data.phone !== undefined) {
+    if (!/^[0-9]{10}$/.test(data.phone)) throw new Error('A 10-digit phone number is required')
+    payload.phone = Number(data.phone)
   }
-
-  const updatePayload: StudentUpdate = {
-    ...batchUpdate,
-  }
-  if (data.name !== undefined) updatePayload.name = data.name.trim()
-  if (data.phone !== undefined) updatePayload.phone = data.phone.trim()
-  if (data.alternatePhone !== undefined) updatePayload.alternate_phone = data.alternatePhone.trim() || null
-  if (data.guardianName !== undefined) updatePayload.guardian_name = data.guardianName.trim() || null
-  if (data.dateOfBirth !== undefined) updatePayload.date_of_birth = data.dateOfBirth || null
-  if (data.enrollmentSource !== undefined) updatePayload.enrollment_source = data.enrollmentSource || null
-  if (data.internalNotes !== undefined) updatePayload.internal_notes = data.internalNotes.trim()
-  if (data.fees !== undefined) updatePayload.fees = data.fees
-  if (data.nextDueDate !== undefined) {
-    updatePayload.next_due_date = data.nextDueDate
-    updatePayload.status = deriveStudentStatus(data.nextDueDate)
-  }
-
-  // Note: NEVER update start_date — it is immutable.
-
-  const { error } = await supabase.from('students').update(updatePayload).eq('id', id)
+  if (data.alternatePhone !== undefined) payload.alternate_phone = data.alternatePhone.trim() || null
+  if (data.guardianName !== undefined) payload.guardian_name = data.guardianName.trim() || null
+  if (data.dateOfBirth !== undefined) payload.date_of_birth = data.dateOfBirth || null
+  if (data.enrollmentSource !== undefined) payload.enrollment_source = data.enrollmentSource
+  if (data.internalNotes !== undefined) payload.internal_notes = data.internalNotes.trim()
+  if (data.fees !== undefined) payload.fees = paise(data.fees)
+  if (data.batchId !== undefined) payload.batch_id = await resolveBatch(supabase, academyId, data.batchId)
+  const { error } = await supabase.from('students').update(payload).eq('academy_id', academyId).eq('id', id)
   if (error) throw new Error(error.message)
-  revalidatePath('/students')
-  revalidatePath(`/students/${id}`)
+  revalidateStudent(id)
 }
 
 export async function deleteStudentPermanently(id: string) {
-  const { supabase } = await getServerSession()
-  const { error } = await supabase.from('students').delete().eq('id', id)
+  const { supabase, academyId } = await getServerSession()
+  const { error } = await supabase.from('students').delete().eq('academy_id', academyId).eq('id', id)
   if (error) {
-    // Soft-delete if foreign key constraint blocks hard delete
-    const { error: softErr } = await supabase.from('students').update({ status: 'inactive' }).eq('id', id)
-    if (softErr) throw new Error(softErr.message)
+    const { error: softError } = await supabase.from('students').update({ status: 'inactive' })
+      .eq('academy_id', academyId).eq('id', id)
+    if (softError) throw new Error(softError.message)
   }
-  revalidatePath('/students')
+  revalidateStudent(id)
 }

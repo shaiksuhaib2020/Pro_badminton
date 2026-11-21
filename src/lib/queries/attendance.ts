@@ -1,5 +1,7 @@
+import 'server-only'
+
 import { getServerSession } from '@/lib/supabase/auth-context'
-import type { AttendanceRecord } from '@/lib/mock-data'
+import type { AttendanceRecord } from '@/lib/types/attendance'
 
 // All attendance records for a batch — used on batch detail page
 export async function getAttendanceByBatch(batchId: string): Promise<AttendanceRecord[]> {

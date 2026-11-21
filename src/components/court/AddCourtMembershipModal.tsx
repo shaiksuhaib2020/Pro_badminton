@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
-import { mockCourtMemberships, CourtMembership, CourtMembershipPerson, CourtPaymentEntryType, CourtPaymentEntryStatus } from '@/lib/mock-data'
+import { mockCourtMemberships } from '@/lib/mock-data'
+import type { CourtMembership, CourtMembershipPerson, CourtPaymentEntryType, CourtPaymentEntryStatus } from '@/lib/types/court'
 import { getTodayIST } from '@/lib/utils'
 
 type AddCourtMembershipModalProps = {

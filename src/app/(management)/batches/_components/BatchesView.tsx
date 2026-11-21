@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Batch, Student } from '@/lib/mock-data'
+import type { Batch } from '@/lib/types/batches'
+import type { Student } from '@/lib/types/students'
 import { Plus, X, Trash2, Pencil, CalendarDays, IndianRupee, Users, Loader2 } from 'lucide-react'
 import { createBatch, updateBatch, deleteBatch } from '@/app/(management)/batches/actions'
+import { getTodayIST } from '@/lib/utils'
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -197,7 +199,7 @@ export default function BatchesView({ initialBatches, students }: BatchesViewPro
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {batches.map(batch => {
             const studentCount = students.filter(
-              s => (s.currentBatch === batch.name || s.currentBatch === batch.id) && s.status !== 'dropout'
+              s => s.currentBatchId === batch.id && s.status !== 'dropout'
             ).length
 
             return (
@@ -257,11 +259,21 @@ export default function BatchesView({ initialBatches, students }: BatchesViewPro
 
                 <div className="flex-1"></div>
 
-                <div className="flex items-center justify-between border-t border-so-border pt-4 mt-4">
+                <div className="flex items-center justify-between gap-2 border-t border-so-border pt-4 mt-4">
                   <div className="flex items-center gap-1.5 text-sm text-so-text font-medium bg-so-surface px-2.5 py-1 rounded-lg">
                     <Users className="w-4 h-4 text-so-muted" />
                     {studentCount} {studentCount === 1 ? 'student' : 'students'}
                   </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push(`/batches/${batch.id}?tab=attendance&date=${getTodayIST()}`)
+                    }}
+                    className="px-2.5 py-1 bg-so-accent text-so-accent-text rounded-lg text-xs font-semibold hover:bg-so-accent-hover transition-colors shadow-sm"
+                  >
+                    Take Attendance
+                  </button>
                   {batch.fees ? (
                     <div className="flex items-center gap-1 text-sm font-semibold text-emerald-600">
                       ₹{batch.fees.toLocaleString('en-IN')}<span className="text-xs font-normal text-so-muted">/mo</span>
