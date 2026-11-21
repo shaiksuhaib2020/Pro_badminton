@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { mockBranches, mockStudents, mockBatches, Branch } from '@/lib/mock-data'
+import { mockBranches, mockStudents, mockBatches } from '@/lib/mock-data'
+import type { Branch } from '@/lib/types/settings'
 import { Building2, Pencil, Plus, AlertCircle, X, Check } from 'lucide-react'
 import { format } from 'date-fns'
 

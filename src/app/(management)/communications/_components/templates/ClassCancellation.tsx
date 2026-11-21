@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { getTodayIST, formatDate } from '@/lib/utils'
-import { mockSettings, mockStudents, mockMessageLogs, MessageLog, mockBatches } from '@/lib/mock-data'
+import { mockSettings, mockStudents, mockMessageLogs, mockBatches } from '@/lib/mock-data'
+import type { MessageLog } from '@/lib/types/communications'
 import { CheckCircle2 } from 'lucide-react'
 
 export default function ClassCancellation() {

@@ -1,18 +1,15 @@
+// Sample records and in-memory demo state for features awaiting persistence migration.
+// Application models, static constants, and pure helpers live in their own modules.
+import type { Enquiry } from './types/enquiries'
+import type { Student } from './types/students'
+import type { CourtPlan, CourtMembership } from './types/court'
+import type { Event, Branch, StaffMember, Settings } from './types/settings'
+import type { Batch } from './types/batches'
+import type { AttendanceRecord } from './types/attendance'
+import type { AccountEntry, SaleEntry } from './types/accounts'
+import type { InventoryItem } from './types/inventory'
+import type { MessageLog } from './types/communications'
 import { format, subDays, addDays } from 'date-fns'
-
-export type EnquiryStatus = 'not-scheduled' | 'scheduled' | 'completed'
-
-export type Enquiry = {
-  id: string
-  name: string
-  phone: string
-  guardianName: string
-  notes?: string
-  status: EnquiryStatus
-  trialDate?: string   // YYYY-MM-DD — only present when status is 'scheduled' or 'completed'
-  createdAt: string    // YYYY-MM-DD
-  updatedAt?: string
-}
 
 export let mockEnquiries: Enquiry[] = [
   { id: 'eq1', name: 'Rahul Sharma',    phone: '9876543210', guardianName: 'Mohan Sharma',  status: 'not-scheduled', createdAt: '2026-10-01' },
@@ -21,193 +18,6 @@ export let mockEnquiries: Enquiry[] = [
   { id: 'eq4', name: 'Sneha Nair',      phone: '9654321098', guardianName: 'Ravi Nair',     status: 'not-scheduled', createdAt: '2026-10-05' },
   { id: 'eq5', name: 'Kiran Babu',      phone: '9988776655', guardianName: 'Raju Babu',     status: 'scheduled',     trialDate: '2026-10-10', createdAt: '2026-10-03' },
 ]
-
-export type PaymentMethod = 'cash' | 'upi' | 'card' | 'other'
-
-export type PaymentEntry = {
-  id: string
-  date: string
-  amount: number
-  remainingAmount: number
-  paymentType: 'full' | 'partial' | 'advance'
-  coveredFrom?: string
-  coveredUntil?: string
-  paymentMethod: PaymentMethod
-  status: 'active' | 'inactive' | 'deleted'
-  note: string
-}
-
-export type Student = {
-  id: string
-  name: string
-  phone: string
-  alternatePhone: string
-  guardianName: string
-  address?: string
-  email?: string
-
-  currentBatch: string
-  fees: number
-  startDate: string
-  membershipStartDate: string
-  nextDueDate: string
-  status: 'active' | 'due-soon' | 'expired' | 'inactive' | 'dropout'
-  dateOfBirth?: string
-  enrollmentSource?: 'walk-in' | 'referral' | 'social-media' | 'other'
-  dropoutReason?: string
-  dropoutDate?: string
-  pendingAmount: number
-  internalNotes: string
-  paymentHistory: PaymentEntry[]
-}
-
-
-export type CourtPlan = {
-  id: string
-  name: string
-  planType: 'monthly' | 'sessions'
-  price: number
-  // Monthly-specific
-  durationMonths?: number         // how many months the plan covers
-  // Sessions-specific
-  totalSessions?: number          // sessions in this pack
-  validityDays?: number           // days before unused sessions expire
-}
-
-export type CourtPlanType = 'monthly' | 'sessions'
-
-export type CourtMembershipStatus =
-  | 'active' | 'due-soon' | 'expired'
-  | 'sessions-low' | 'exhausted' | 'inactive' | 'dropout'
-
-export type CourtPaymentEntryType = 'new' | 'renewal' | 'session-topup'
-export type CourtPaymentEntryStatus = 'active' | 'deleted'
-
-export type CourtPaymentEntry = {
-  id: string
-  membershipId: string
-  date: string
-  amount: number
-  payingNow?: number
-  partialDue?: number
-  paymentMethod: PaymentMethod
-  entryType: CourtPaymentEntryType
-  status: CourtPaymentEntryStatus
-  note?: string
-}
-
-export type CourtMembershipPerson = {
-  id: string
-  membershipId: string
-  name: string
-}
-
-export type CourtCheckIn = {
-  id: string
-  membershipId: string
-  checkedInAt: string
-  sessionsAfter?: number
-  peopleCheckedIn: number
-}
-
-export const getMembershipPeopleCount = (m: CourtMembership) => 1 + m.people.length
-export const getMembershipDisplayLabel = (m: CourtMembership) => m.contactName
-
-export type CourtMembership = {
-  id: string
-  contactName: string
-  contactPhone: string
-  address?: string
-  email?: string
-  people: CourtMembershipPerson[]
-  planId?: string
-  planType: CourtPlanType
-  startDate: string
-  endDate: string
-  totalSessions?: number
-  remainingSessions?: number
-  status: CourtMembershipStatus
-  amountPaid: number
-  pendingAmount: number
-  notes?: string
-  paymentHistory: CourtPaymentEntry[]
-  checkInHistory: CourtCheckIn[]
-}
-
-export type Event = {
-  id: string
-  name: string
-  type: 'tournament' | 'sports-meet' | 'general'
-  date: string
-  description: string
-}
-
-export type StaffRole = 'owner' | 'manager' | 'coach' | 'accountant' | 'receptionist'
-export type StaffStatus = 'active' | 'invited' | 'suspended'
-export type AccessLevel = 'full' | 'view' | 'collect' | 'mark' | 'partial' | 'none'
-
-export interface Branch {
-  id: string
-  name: string
-  address: string
-  phone: string
-  isActive: boolean
-  isPrimary: boolean
-  createdAt: string
-}
-
-export interface StaffMember {
-  id: string
-  name: string
-  email: string
-  role: StaffRole
-  branchIds: string[]
-  status: StaffStatus
-  invitedAt: string
-  avatarInitials: string
-}
-
-export interface ModulePermission {
-  module: string
-  owner: AccessLevel
-  manager: AccessLevel
-  coach: AccessLevel
-  accountant: AccessLevel
-  receptionist: AccessLevel
-}
-
-export type Settings = {
-  courtMembershipEnabled: boolean
-  courtPlans: CourtPlan[]
-  courtName: string
-  tenantPhone?: string
-  tenantAddress?: string
-  tenantTimezone?: string
-  multiBranchEnabled: boolean
-  branches: Branch[]
-  staffMembers: StaffMember[]
-
-  batches: string[]
-  feeReminderEnabled: boolean
-  feeAckEnabled: boolean
-  birthdayWishEnabled: boolean
-}
-
-export interface Batch {
-  id: string
-  name: string
-  branchId: string
-  days: string[]
-  fees?: number
-  description?: string
-}
-
-export type AttendanceRecord = {
-  id: string
-  batchId: string
-  date: string           // yyyy-MM-dd
-  records: Record<string, 'present' | 'absent'>  // studentId → status
-}
 
 export let mockBatches: Batch[] = [
   {
@@ -281,21 +91,6 @@ export let mockStaffMembers: StaffMember[] = [
     avatarInitials: 'DN',
   },
 ]
-
-export const PERMISSION_MATRIX: ModulePermission[] = [
-  { module: 'Dashboard',        owner: 'full',    manager: 'full',    coach: 'view',    accountant: 'view',    receptionist: 'view'    },
-  { module: 'Students',         owner: 'full',    manager: 'full',    coach: 'view',    accountant: 'view',    receptionist: 'partial' },
-  { module: 'Batches',          owner: 'full',    manager: 'full',    coach: 'view',    accountant: 'none',    receptionist: 'none'    },
-  { module: 'Attendance',       owner: 'full',    manager: 'full',    coach: 'mark',    accountant: 'none',    receptionist: 'none'    },
-  { module: 'Fee Transactions', owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'full',    receptionist: 'collect' },
-  { module: 'Accounts',         owner: 'full',    manager: 'view',    coach: 'none',    accountant: 'full',    receptionist: 'none'    },
-  { module: 'Inventory',        owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'view',    receptionist: 'none'    },
-  { module: 'Court Memberships',    owner: 'full',    manager: 'full',    coach: 'none',    accountant: 'view',    receptionist: 'collect' },
-  { module: 'Events',           owner: 'full',    manager: 'full',    coach: 'view',    accountant: 'none',    receptionist: 'view'    },
-  { module: 'Settings',         owner: 'full',    manager: 'partial', coach: 'none',    accountant: 'none',    receptionist: 'none'    },
-  { module: 'Staff Management', owner: 'full',    manager: 'view',    coach: 'none',    accountant: 'none',    receptionist: 'none'    },
-]
-
 
 export let mockCourtPlans: CourtPlan[] = [
   {
@@ -394,7 +189,6 @@ export let mockCourtMemberships: CourtMembership[] = [
 ]
 
 export let mockAttendance: AttendanceRecord[] = []
-
 
 export let mockSettings: Settings = {
   feeReminderEnabled: false,
@@ -611,62 +405,6 @@ export let mockStudents: Student[] = [
   }
 ]
 
-
-// ── Account Manager Types ─────────────────────────────
-
-export type AccountEntry = {
-  id: string
-  date: string           // yyyy-MM-dd
-  category: string
-  description: string
-  amount: number         // always positive
-  paymentMethod?: PaymentMethod
-  vendor?: string
-  notes?: string
-}
-
-export type SaleType = 'inventory' | 'quick'
-
-export type SaleEntry = {
-  id: string
-  date: string                // YYYY-MM-DD
-  saleType: SaleType
-  itemName: string            // product name (inventory) or free-text label (quick)
-  category: string            // inventory item's category, or 'Quick Sale' for quick sales
-  inventoryItemId?: string    // inventory sales only — references InventoryItem.id
-  quantity?: number           // inventory sales only — units sold
-  unitPrice: number           // per-unit selling price (inventory) or full price (quick)
-  amount: number              // quantity × unitPrice for inventory; unitPrice for quick
-  paymentMethod: PaymentMethod
-  notes?: string
-}
-
-// ── Expense categories ───────────────────────────────
-export const EXPENSE_CATEGORIES = [
-  'Shuttlecocks',
-  'Equipment & Gear',
-  'Court Rent',
-  'Coaching Staff',
-  'Utilities',
-  'Maintenance & Repairs',
-  'Marketing',
-  'Tournament Expenses',
-  'Miscellaneous',
-] as const
-
-// ── Income categories (non-fee only) ─────────────────
-export const INCOME_CATEGORIES = [
-  'Court Rental',
-  'Membership Fees',
-  'Equipment Sales',
-  'Shuttle Sales',
-  'Racket Restringing',
-  'Merchandise',
-  'Sponsorship',
-  'Tournament Entry',
-  'Other',
-]
-
 // ── Seed data ────────────────────────────────────────
 export let mockExpenses: AccountEntry[] = [
   {
@@ -755,27 +493,7 @@ export let mockIncomeEntries: AccountEntry[] = [
   },
 ]
 
-// ── Inventory types & data ────────────────────────────────
-
-export type InventoryItem = {
-  id: string
-  sku: string
-  name: string
-  category: string
-  description: string
-  unit: string
-  quantity: number
-  price: number          // unit price (purchase) in ₹
-  sellingPrice: number   // selling price in ₹
-  icon?: string          // product logo or icon
-}
-
-export const BUILTIN_INVENTORY_CATEGORIES = [
-  'Racquet Sports',
-  'Footwear',
-  'Apparel',
-  'Accessories / Miscellaneous',
-] as const
+// ── Inventory sample data ────────────────────────────────
 
 // Mutable — user-created custom inventory categories
 export let mockCustomInventoryCategories: string[] = []
@@ -899,7 +617,6 @@ export let mockSaleEntries: SaleEntry[] = (() => {
 // Mutable — appended by user in the Expenses panel
 export let mockCustomExpenseCategories: string[] = []
 
-
 // Self-executing seed function at module level
 ;(() => {
   const eligible = (batchName: string) =>
@@ -921,29 +638,6 @@ export let mockCustomExpenseCategories: string[] = []
     })
   }
 })()
-
-/** Individual delivery outcome for a single recipient within a broadcast. */
-export type RecipientStatus = 'pending' | 'sent' | 'failed' | 'delivered' | 'read'
-
-export interface MessageRecipient {
-  studentId?: string           // FK → students.id, absent for non-student recipients
-  name: string                 // snapshot at send time
-  phone: string                // snapshot at send time
-  status: RecipientStatus      // individual delivery outcome
-  errorMessage?: string        // provider error message when status === 'failed'
-  deliveredAt?: string         // ISO timestamp — only when confirmed by provider
-  readAt?: string              // ISO timestamp — only when confirmed by provider
-}
-
-export interface MessageLog {
-  id: string
-  templateId: string           // matches TEMPLATE_REGISTRY id
-  sentAt: string               // ISO datetime string
-  recipientCount: number       // kept for backward compat; synced with recipients.length for new records
-  recipients: MessageRecipient[] // per-recipient delivery details
-  triggerType: 'manual' | 'auto'
-  reason?: string              // e.g. "Dussehra Holiday", "Coach unwell"
-}
 
 export let mockMessageLogs: MessageLog[] = [
   {
@@ -1005,5 +699,4 @@ export let mockMessageLogs: MessageLog[] = [
     recipients: [],
   },
 ]
-
 

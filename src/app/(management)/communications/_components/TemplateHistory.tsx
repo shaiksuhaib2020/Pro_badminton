@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { TemplateId } from '@/app/(management)/communications/page'
-import { mockMessageLogs, MessageLog, MessageRecipient } from '@/lib/mock-data'
+import type { TemplateId } from '@/lib/types/communications'
+import { mockMessageLogs } from '@/lib/mock-data'
+import type { MessageLog, MessageRecipient } from '@/lib/types/communications'
 import { MessageCircle, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle, Clock, Send, Eye } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 

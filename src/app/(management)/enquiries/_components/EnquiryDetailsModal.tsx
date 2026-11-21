@@ -1,6 +1,6 @@
 'use client'
 
-import { Enquiry } from '@/lib/mock-data'
+import type { Enquiry } from '@/lib/types/enquiries'
 import { X } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 

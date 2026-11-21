@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { toDbEnum } from '@/lib/utils'
 import { getServerSession } from '@/lib/supabase/auth-context'
-import type { EnquiryStatus } from '@/lib/mock-data'
+import type { EnquiryStatus } from '@/lib/types/enquiries'
 import type { Database } from '@/lib/supabase/database.types'
 
 export async function createEnquiry(data: {
@@ -31,6 +31,7 @@ export async function createEnquiry(data: {
   if (error) throw new Error(error.message)
 
   revalidatePath('/enquiries')
+  revalidatePath('/dashboard')
   return created
 }
 
@@ -52,6 +53,7 @@ export async function updateEnquiry(id: string, data: {
   if (error) throw new Error(error.message)
 
   revalidatePath('/enquiries')
+  revalidatePath('/dashboard')
 }
 
 export async function advanceEnquiryStatus(
@@ -80,6 +82,7 @@ export async function advanceEnquiryStatus(
   if (error) throw new Error(error.message)
 
   revalidatePath('/enquiries')
+  revalidatePath('/dashboard')
 }
 
 export async function deleteEnquiry(id: string) {
@@ -90,4 +93,5 @@ export async function deleteEnquiry(id: string) {
   if (error) throw new Error(error.message)
 
   revalidatePath('/enquiries')
+  revalidatePath('/dashboard')
 }

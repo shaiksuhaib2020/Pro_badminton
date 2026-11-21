@@ -1,6 +1,7 @@
 'use client'
 
-import { PERMISSION_MATRIX, AccessLevel } from '@/lib/mock-data'
+import { PERMISSION_MATRIX } from '@/lib/constants/permissions'
+import type { AccessLevel } from '@/lib/types/settings'
 import { ShieldCheck, Info } from 'lucide-react'
 
 const ACCESS_CHIP: Record<AccessLevel, { label: string; className: string }> = {

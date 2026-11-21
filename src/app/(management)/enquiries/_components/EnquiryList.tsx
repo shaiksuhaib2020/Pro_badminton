@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Enquiry, EnquiryStatus } from '@/lib/mock-data'
+import type { Enquiry, EnquiryStatus } from '@/lib/types/enquiries'
 import { getTodayIST, formatDate } from '@/lib/utils'
 import { Search, Plus, MoreVertical, ClipboardList, X, Loader2 } from 'lucide-react'
-import AddEnquiryModal from '@/components/enquiries/AddEnquiryModal'
-import EditEnquiryModal from '@/components/enquiries/EditEnquiryModal'
-import EnquiryDetailsModal from '@/components/enquiries/EnquiryDetailsModal'
+import AddEnquiryModal from '@/app/(management)/enquiries/_components/AddEnquiryModal'
+import EditEnquiryModal from '@/app/(management)/enquiries/_components/EditEnquiryModal'
+import EnquiryDetailsModal from '@/app/(management)/enquiries/_components/EnquiryDetailsModal'
 import AddStudentModal from '@/components/students/AddStudentModal'
 import { advanceEnquiryStatus, deleteEnquiry } from '@/app/(management)/enquiries/actions'
 

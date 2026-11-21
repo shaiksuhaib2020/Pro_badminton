@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import Sidebar from '@/components/layout/Sidebar'
-import TopBar from '@/components/layout/TopBar'
+import Sidebar from '@/app/(management)/_components/Sidebar'
+import TopBar from '@/app/(management)/_components/TopBar'
 
 export default async function ManagementLayout({
   children,

@@ -1,6 +1,8 @@
+import 'server-only'
+
 import { getServerSession } from '@/lib/supabase/auth-context'
 import { toAppEnum } from '@/lib/utils'
-import type { Enquiry } from '@/lib/mock-data'
+import type { Enquiry } from '@/lib/types/enquiries'
 
 export async function getEnquiries(): Promise<Enquiry[]> {
   const { supabase } = await getServerSession()

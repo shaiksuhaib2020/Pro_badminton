@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
-import { TemplateId } from '@/app/(management)/communications/page'
+import type { TemplateId } from '@/lib/types/communications'
 import TemplateHistory from './TemplateHistory'
 
 export default function TemplateDetailShell({ id, name, onBack, children }: { id: TemplateId, name: string, onBack: () => void, children: React.ReactNode }) {

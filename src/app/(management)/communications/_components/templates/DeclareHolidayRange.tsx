@@ -2,11 +2,13 @@
 
 import { useState } from 'react'
 import { getTodayIST, formatDate } from '@/lib/utils'
-import { mockSettings, mockStudents, mockMessageLogs, MessageLog } from '@/lib/mock-data'
+import { mockSettings, mockStudents, mockMessageLogs } from '@/lib/mock-data'
+import type { MessageLog } from '@/lib/types/communications'
 import { CheckCircle2 } from 'lucide-react'
 
-export default function DeclareHoliday() {
-  const [date, setDate] = useState('')
+export default function DeclareHolidayRange() {
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
   const [step, setStep] = useState<'form' | 'confirm'>('form')
   const [isSuccess, setIsSuccess] = useState(false)
@@ -16,7 +18,10 @@ export default function DeclareHoliday() {
   const exampleStudent = activeStudents[0]?.name || 'Player'
   const academyName = mockSettings.courtName
 
-  const formattedDate = date ? formatDate(date) : '[Date]'
+  const formattedStart = startDate ? formatDate(startDate) : '[Start Date]'
+  const formattedEnd = endDate ? formatDate(endDate) : '[End Date]'
+
+  const isValid = startDate && endDate && reason && endDate >= startDate
 
   const handleSend = async () => {
     try {
@@ -24,15 +29,15 @@ export default function DeclareHoliday() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          template: 'declare-holiday',
-          date,
+          template: 'declare-holiday-range',
+          startDate,
+          endDate,
           reason,
           recipientCount
         })
       })
 
       if (res.ok) {
-        // Deduplicate by phone to avoid inflating the count
         const seen = new Set<string>()
         const recipients = activeStudents
           .filter(s => {
@@ -48,7 +53,7 @@ export default function DeclareHoliday() {
           }))
         const newLog: MessageLog = {
           id: `ml-${Date.now()}`,
-          templateId: 'declare-holiday',
+          templateId: 'declare-holiday-range',
           sentAt: new Date().toISOString(),
           recipientCount: recipients.length,
           recipients,
@@ -60,7 +65,8 @@ export default function DeclareHoliday() {
         setTimeout(() => {
           setIsSuccess(false)
           setStep('form')
-          setDate('')
+          setStartDate('')
+          setEndDate('')
           setReason('')
         }, 3000)
       }
@@ -88,8 +94,8 @@ export default function DeclareHoliday() {
           <p className="text-sm text-so-text whitespace-pre-wrap leading-relaxed">
             🏸 {academyName}
             <br /><br />
-            Hi {exampleStudent}, classes are cancelled on {formattedDate} due to {reason}.
-            See you on the next session day! 🙏
+            Hi {exampleStudent}, classes are cancelled from {formattedStart} to {formattedEnd} due to {reason}.
+            See you when we're back! 🙏
           </p>
         </div>
 
@@ -119,21 +125,33 @@ export default function DeclareHoliday() {
     <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-300">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-so-text mb-1.5">Date</label>
-            <input
-              type="date"
-              min={getTodayIST()}
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-so-accent"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-so-text mb-1.5">Start Date</label>
+              <input
+                type="date"
+                min={getTodayIST()}
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-so-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-so-text mb-1.5">End Date</label>
+              <input
+                type="date"
+                min={startDate || getTodayIST()}
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-so-accent"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-so-text mb-1.5">Reason</label>
             <textarea
               rows={2}
-              placeholder="e.g. Dussehra holiday"
+              placeholder="e.g. Festival Holidays"
               value={reason}
               onChange={e => setReason(e.target.value)}
               className="w-full bg-white border border-so-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-so-accent resize-none"
@@ -147,8 +165,8 @@ export default function DeclareHoliday() {
             <p className="text-sm text-so-muted whitespace-pre-wrap leading-relaxed">
               🏸 {academyName}
               <br /><br />
-              Hi <span className="bg-so-accent-subtle text-so-accent rounded px-1 text-xs font-mono">{"{student_name}"}</span>, classes are cancelled on <span className="text-so-text font-medium">{formattedDate}</span> due to <span className="text-so-text font-medium">{reason || '...'}</span>.
-              See you on the next session day! 🙏
+              Hi <span className="bg-so-accent-subtle text-so-accent rounded px-1 text-xs font-mono">{"{student_name}"}</span>, classes are cancelled from <span className="text-so-text font-medium">{formattedStart}</span> to <span className="text-so-text font-medium">{formattedEnd}</span> due to <span className="text-so-text font-medium">{reason || '...'}</span>.
+              See you when we're back! 🙏
             </p>
           </div>
         </div>
@@ -160,7 +178,7 @@ export default function DeclareHoliday() {
         </p>
         <button
           onClick={() => setStep('confirm')}
-          disabled={!date || !reason}
+          disabled={!isValid}
           className="bg-so-accent disabled:opacity-50 hover:bg-so-accent/90 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
         >
           Preview & Send

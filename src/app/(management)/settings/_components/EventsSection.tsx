@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { mockEvents, Event } from '@/lib/mock-data'
+import { mockEvents } from '@/lib/mock-data'
+import type { Event } from '@/lib/types/settings'
 import { getTodayIST } from '@/lib/utils'
 import { Calendar, Trash2 } from 'lucide-react'
 import { parseISO, format } from 'date-fns'

@@ -1,13 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import {
-  mockStaffMembers,
-  mockBranches,
-  StaffMember,
-  StaffRole,
-  StaffStatus,
-} from '@/lib/mock-data'
+import { mockStaffMembers, mockBranches } from '@/lib/mock-data'
+import type { StaffMember, StaffRole, StaffStatus } from '@/lib/types/settings'
 import {
   Users,
   Plus,

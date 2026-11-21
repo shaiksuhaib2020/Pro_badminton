@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Enquiry } from '@/lib/mock-data'
+import type { Enquiry } from '@/lib/types/enquiries'
 import { X, Loader2 } from 'lucide-react'
 import { getTodayIST } from '@/lib/utils'
 import { updateEnquiry, advanceEnquiryStatus } from '@/app/(management)/enquiries/actions'

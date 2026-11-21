@@ -1,29 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import type { TemplateId, TemplateMeta } from '@/lib/types/communications'
 import { format, parseISO } from 'date-fns'
 import { mockMessageLogs } from '@/lib/mock-data'
-import TemplateCard from '@/components/communications/TemplateCard'
-import TemplateDetailShell from '@/components/communications/TemplateDetailShell'
-import FeeReminder from '@/components/communications/templates/FeeReminder'
-import FeeAcknowledgement from '@/components/communications/templates/FeeAcknowledgement'
-import DeclareHoliday from '@/components/communications/templates/DeclareHoliday'
-import DeclareHolidayRange from '@/components/communications/templates/DeclareHolidayRange'
-import ClassCancellation from '@/components/communications/templates/ClassCancellation'
-import BirthdayWish from '@/components/communications/templates/BirthdayWish'
-
-export type TemplateId =
-  | 'fee-reminder' | 'fee-acknowledgement'
-  | 'declare-holiday' | 'declare-holiday-range'
-  | 'class-cancellation' | 'birthday-wish'
-
-export interface TemplateMeta {
-  id: TemplateId
-  name: string
-  description: string
-  category: 'automated' | 'manual'
-  recipientSummary: string
-}
+import TemplateCard from '@/app/(management)/communications/_components/TemplateCard'
+import TemplateDetailShell from '@/app/(management)/communications/_components/TemplateDetailShell'
+import FeeReminder from '@/app/(management)/communications/_components/templates/FeeReminder'
+import FeeAcknowledgement from '@/app/(management)/communications/_components/templates/FeeAcknowledgement'
+import DeclareHoliday from '@/app/(management)/communications/_components/templates/DeclareHoliday'
+import DeclareHolidayRange from '@/app/(management)/communications/_components/templates/DeclareHolidayRange'
+import ClassCancellation from '@/app/(management)/communications/_components/templates/ClassCancellation'
+import BirthdayWish from '@/app/(management)/communications/_components/templates/BirthdayWish'
 
 export const TEMPLATE_REGISTRY: TemplateMeta[] = [
   { id: 'fee-reminder',          name: 'Fee Reminder',          description: 'Automated reminder to students with overdue or pending fees',  category: 'automated', recipientSummary: 'Students with status: due-soon or expired'  },
