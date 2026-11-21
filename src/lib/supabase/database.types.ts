@@ -20,6 +20,7 @@ export type Database = {
           birthday_wish_enabled: boolean
           court_membership_enabled: boolean
           created_at: string
+          custom_expense_categories: string[]
           fee_ack_enabled: boolean
           fee_reminder_enabled: boolean
           id: string
@@ -35,6 +36,7 @@ export type Database = {
           birthday_wish_enabled?: boolean
           court_membership_enabled?: boolean
           created_at?: string
+          custom_expense_categories?: string[]
           fee_ack_enabled?: boolean
           fee_reminder_enabled?: boolean
           id?: string
@@ -50,6 +52,7 @@ export type Database = {
           birthday_wish_enabled?: boolean
           court_membership_enabled?: boolean
           created_at?: string
+          custom_expense_categories?: string[]
           fee_ack_enabled?: boolean
           fee_reminder_enabled?: boolean
           id?: string
@@ -74,8 +77,8 @@ export type Database = {
           id: string
           notes: string | null
           payment_method: Database["public"]["Enums"]["payment_method"] | null
-          vendor: string | null
           updated_at: string
+          vendor: string | null
         }
         Insert: {
           academy_id: string
@@ -88,8 +91,8 @@ export type Database = {
           id?: string
           notes?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
-          vendor?: string | null
           updated_at?: string
+          vendor?: string | null
         }
         Update: {
           academy_id?: string
@@ -102,100 +105,12 @@ export type Database = {
           id?: string
           notes?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
-          vendor?: string | null
           updated_at?: string
+          vendor?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "account_entries_academy_id_fkey"
-            columns: ["academy_id"]
-            isOneToOne: false
-            referencedRelation: "academies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      custom_expense_categories: {
-        Row: {
-          academy_id: string
-          created_at: string
-          id: string
-          name: string
-        }
-        Insert: {
-          academy_id: string
-          created_at?: string
-          id?: string
-          name: string
-        }
-        Update: {
-          academy_id?: string
-          created_at?: string
-          id?: string
-          name?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "custom_expense_categories_academy_id_fkey"
-            columns: ["academy_id"]
-            isOneToOne: false
-            referencedRelation: "academies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sales: {
-        Row: {
-          academy_id: string
-          amount: number
-          category: string
-          created_at: string
-          date: string
-          id: string
-          inventory_item_id: string | null
-          item_name: string
-          notes: string | null
-          payment_method: string
-          quantity: number | null
-          sale_type: string
-          unit_price: number
-          updated_at: string
-        }
-        Insert: {
-          academy_id: string
-          amount: number
-          category: string
-          created_at?: string
-          date: string
-          id?: string
-          inventory_item_id?: string | null
-          item_name: string
-          notes?: string | null
-          payment_method: string
-          quantity?: number | null
-          sale_type: string
-          unit_price: number
-          updated_at?: string
-        }
-        Update: {
-          academy_id?: string
-          amount?: number
-          category?: string
-          created_at?: string
-          date?: string
-          id?: string
-          inventory_item_id?: string | null
-          item_name?: string
-          notes?: string | null
-          payment_method?: string
-          quantity?: number | null
-          sale_type?: string
-          unit_price?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sales_academy_id_fkey"
             columns: ["academy_id"]
             isOneToOne: false
             referencedRelation: "academies"
@@ -621,6 +536,35 @@ export type Database = {
           },
         ]
       }
+      custom_expense_categories: {
+        Row: {
+          academy_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          academy_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          academy_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_expense_categories_academy_id_fkey"
+            columns: ["academy_id"]
+            isOneToOne: false
+            referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       enquiries: {
         Row: {
           academy_id: string
@@ -765,58 +709,15 @@ export type Database = {
           },
         ]
       }
-      membership_types: {
-        Row: {
-          academy_id: string
-          created_at: string
-          duration: number
-          duration_type: Database["public"]["Enums"]["duration_type"]
-          id: string
-          is_active: boolean
-          name: string
-          price: number
-          updated_at: string
-        }
-        Insert: {
-          academy_id: string
-          created_at?: string
-          duration: number
-          duration_type?: Database["public"]["Enums"]["duration_type"]
-          id?: string
-          is_active?: boolean
-          name: string
-          price: number
-          updated_at?: string
-        }
-        Update: {
-          academy_id?: string
-          created_at?: string
-          duration?: number
-          duration_type?: Database["public"]["Enums"]["duration_type"]
-          id?: string
-          is_active?: boolean
-          name?: string
-          price?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "membership_types_academy_id_fkey"
-            columns: ["academy_id"]
-            isOneToOne: false
-            referencedRelation: "academies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       message_logs: {
         Row: {
           academy_id: string
           created_at: string
           id: string
+          reason: string | null
           recipient_count: number
+          recipients: Json
           sent_at: string
-          status: Database["public"]["Enums"]["message_log_status"]
           template_id: string
           trigger_type: Database["public"]["Enums"]["message_trigger_type"]
         }
@@ -824,9 +725,10 @@ export type Database = {
           academy_id: string
           created_at?: string
           id?: string
+          reason?: string | null
           recipient_count?: number
+          recipients?: Json
           sent_at?: string
-          status?: Database["public"]["Enums"]["message_log_status"]
           template_id: string
           trigger_type?: Database["public"]["Enums"]["message_trigger_type"]
         }
@@ -834,9 +736,10 @@ export type Database = {
           academy_id?: string
           created_at?: string
           id?: string
+          reason?: string | null
           recipient_count?: number
+          recipients?: Json
           sent_at?: string
-          status?: Database["public"]["Enums"]["message_log_status"]
           template_id?: string
           trigger_type?: Database["public"]["Enums"]["message_trigger_type"]
         }
@@ -846,6 +749,72 @@ export type Database = {
             columns: ["academy_id"]
             isOneToOne: false
             referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales: {
+        Row: {
+          academy_id: string
+          amount: number
+          category: string
+          created_at: string
+          date: string
+          id: string
+          inventory_item_id: string | null
+          item_name: string
+          notes: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          quantity: number | null
+          sale_type: Database["public"]["Enums"]["sale_type"]
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          academy_id: string
+          amount: number
+          category: string
+          created_at?: string
+          date: string
+          id?: string
+          inventory_item_id?: string | null
+          item_name: string
+          notes?: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          quantity?: number | null
+          sale_type: Database["public"]["Enums"]["sale_type"]
+          unit_price: number
+          updated_at?: string
+        }
+        Update: {
+          academy_id?: string
+          amount?: number
+          category?: string
+          created_at?: string
+          date?: string
+          id?: string
+          inventory_item_id?: string | null
+          item_name?: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          quantity?: number | null
+          sale_type?: Database["public"]["Enums"]["sale_type"]
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_academy_id_fkey"
+            columns: ["academy_id"]
+            isOneToOne: false
+            referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
             referencedColumns: ["id"]
           },
         ]
@@ -911,13 +880,16 @@ export type Database = {
           created_at: string
           date: string
           id: string
-          months_covered: number
+          next_due_date: string | null
           note: string
-          payment_method: Database["public"]["Enums"]["payment_method"]
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
           payment_type: Database["public"]["Enums"]["payment_type"]
           remaining_amount: number
+          settles_payment_id: string | null
+          start_date: string | null
           status: Database["public"]["Enums"]["payment_status"]
           student_id: string
+          transaction_id: string | null
           updated_at: string
         }
         Insert: {
@@ -926,13 +898,16 @@ export type Database = {
           created_at?: string
           date: string
           id?: string
-          months_covered?: number
+          next_due_date?: string | null
           note?: string
-          payment_method: Database["public"]["Enums"]["payment_method"]
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
           payment_type: Database["public"]["Enums"]["payment_type"]
           remaining_amount?: number
+          settles_payment_id?: string | null
+          start_date?: string | null
           status?: Database["public"]["Enums"]["payment_status"]
           student_id: string
+          transaction_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -941,13 +916,16 @@ export type Database = {
           created_at?: string
           date?: string
           id?: string
-          months_covered?: number
+          next_due_date?: string | null
           note?: string
-          payment_method?: Database["public"]["Enums"]["payment_method"]
+          payment_method?: Database["public"]["Enums"]["payment_method"] | null
           payment_type?: Database["public"]["Enums"]["payment_type"]
           remaining_amount?: number
+          settles_payment_id?: string | null
+          start_date?: string | null
           status?: Database["public"]["Enums"]["payment_status"]
           student_id?: string
+          transaction_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -956,6 +934,20 @@ export type Database = {
             columns: ["academy_id"]
             isOneToOne: false
             referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_payments_settles_payment_id_fkey"
+            columns: ["settles_payment_id"]
+            isOneToOne: false
+            referencedRelation: "student_membership"
+            referencedColumns: ["receipt_id"]
+          },
+          {
+            foreignKeyName: "student_payments_settles_payment_id_fkey"
+            columns: ["settles_payment_id"]
+            isOneToOne: false
+            referencedRelation: "student_payments"
             referencedColumns: ["id"]
           },
           {
@@ -970,6 +962,9 @@ export type Database = {
       students: {
         Row: {
           academy_id: string
+          address: string | null
+          email: string | null
+          enroll_days: Database["public"]["Enums"]["day_of_week"][]
           alternate_phone: string | null
           batch_id: string | null
           created_at: string
@@ -983,43 +978,18 @@ export type Database = {
           guardian_name: string | null
           id: string
           internal_notes: string
-          membership_start_date: string
-          membership_type_id: string
+          joining_date: string
           name: string
-          next_due_date: string
           pending_amount: number
-          phone: string
-          start_date: string
+          phone: number | null
           status: Database["public"]["Enums"]["student_status"]
           updated_at: string
         }
         Insert: {
           academy_id: string
-          alternate_phone?: string | null
-          batch_id?: string | null
-          created_at?: string
-          date_of_birth?: string | null
-          dropout_date?: string | null
-          dropout_reason?: string | null
-          enrollment_source?:
-            | Database["public"]["Enums"]["enrollment_source"]
-            | null
-          fees: number
-          guardian_name?: string | null
-          id?: string
-          internal_notes?: string
-          membership_start_date: string
-          membership_type_id: string
-          name: string
-          next_due_date: string
-          pending_amount?: number
-          phone: string
-          start_date: string
-          status?: Database["public"]["Enums"]["student_status"]
-          updated_at?: string
-        }
-        Update: {
-          academy_id?: string
+          address?: string | null
+          email?: string | null
+          enroll_days?: Database["public"]["Enums"]["day_of_week"][]
           alternate_phone?: string | null
           batch_id?: string | null
           created_at?: string
@@ -1033,13 +1003,35 @@ export type Database = {
           guardian_name?: string | null
           id?: string
           internal_notes?: string
-          membership_start_date?: string
-          membership_type_id?: string
-          name?: string
-          next_due_date?: string
+          joining_date: string
+          name: string
           pending_amount?: number
-          phone?: string
-          start_date?: string
+          phone?: number | null
+          status?: Database["public"]["Enums"]["student_status"]
+          updated_at?: string
+        }
+        Update: {
+          academy_id?: string
+          address?: string | null
+          email?: string | null
+          enroll_days?: Database["public"]["Enums"]["day_of_week"][]
+          alternate_phone?: string | null
+          batch_id?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          dropout_date?: string | null
+          dropout_reason?: string | null
+          enrollment_source?:
+            | Database["public"]["Enums"]["enrollment_source"]
+            | null
+          fees?: number
+          guardian_name?: string | null
+          id?: string
+          internal_notes?: string
+          joining_date?: string
+          name?: string
+          pending_amount?: number
+          phone?: number | null
           status?: Database["public"]["Enums"]["student_status"]
           updated_at?: string
         }
@@ -1058,47 +1050,57 @@ export type Database = {
             referencedRelation: "batches"
             referencedColumns: ["id"]
           },
+        ]
+      }
+    }
+    Views: {
+      student_membership: {
+        Row: {
+          next_due_date: string | null
+          receipt_id: string | null
+          start_date: string | null
+          student_id: string | null
+        }
+        Relationships: [
           {
-            foreignKeyName: "students_membership_type_id_fkey"
-            columns: ["membership_type_id"]
+            foreignKeyName: "student_payments_student_id_fkey"
+            columns: ["student_id"]
             isOneToOne: false
-            referencedRelation: "membership_types"
+            referencedRelation: "students"
             referencedColumns: ["id"]
           },
         ]
       }
     }
-    Views: {
-      [_ in never]: never
-    }
     Functions: {
-      record_inventory_sale: {
-        Args: {
-          p_academy_id: string
-          p_inventory_item_id?: string
-          p_quantity?: number
-          p_unit_price: number
-          p_amount: number
-          p_item_name: string
-          p_category: string
-          p_payment_method: string
-          p_date: string
-          p_notes?: string | null
-        }
-        Returns: unknown
-      }
-      reverse_inventory_sale: {
-        Args: {
-          p_academy_id: string
-          p_sale_id: string
-        }
-        Returns: unknown
+      record_student_due_clearance: {
+        Args: { p_student_id: string; p_receipt_id: string; p_amount: number; p_date: string; p_payment_method: Database["public"]["Enums"]["payment_method"]; p_note?: string; p_transaction_id?: string | null }
+        Returns: string
       }
       claim_staff_invitation: { Args: never; Returns: undefined }
       get_my_academy_id: { Args: never; Returns: string }
       get_my_role: {
         Args: never
         Returns: Database["public"]["Enums"]["staff_role"]
+      }
+      record_inventory_sale: {
+        Args: {
+          p_academy_id: string
+          p_amount: number
+          p_category: string
+          p_date: string
+          p_inventory_item_id: string
+          p_item_name: string
+          p_notes?: string
+          p_payment_method: Database["public"]["Enums"]["payment_method"]
+          p_quantity: number
+          p_unit_price: number
+        }
+        Returns: string
+      }
+      reverse_inventory_sale: {
+        Args: { p_academy_id: string; p_sale_id: string }
+        Returns: undefined
       }
     }
     Enums: {
@@ -1136,7 +1138,8 @@ export type Database = {
       message_trigger_type: "manual" | "auto"
       payment_method: "cash" | "upi" | "card" | "other"
       payment_status: "active" | "inactive" | "deleted"
-      payment_type: "full" | "partial" | "advance"
+      payment_type: "full" | "partial" | "advance" | "due_clearance"
+      sale_type: "inventory" | "quick"
       staff_role: "owner" | "manager" | "coach" | "accountant" | "receptionist"
       staff_status: "active" | "invited" | "suspended"
       student_status: "active" | "due-soon" | "expired" | "inactive" | "dropout"
@@ -1304,7 +1307,8 @@ export const Constants = {
       message_trigger_type: ["manual", "auto"],
       payment_method: ["cash", "upi", "card", "other"],
       payment_status: ["active", "inactive", "deleted"],
-      payment_type: ["full", "partial", "advance"],
+      payment_type: ["full", "partial", "advance", "due_clearance"],
+      sale_type: ["inventory", "quick"],
       staff_role: ["owner", "manager", "coach", "accountant", "receptionist"],
       staff_status: ["active", "invited", "suspended"],
       student_status: ["active", "due-soon", "expired", "inactive", "dropout"],
