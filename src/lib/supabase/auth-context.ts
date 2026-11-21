@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
-export async function getServerSession() {
+export async function readServerSession() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  if (!user) return null
 
   const { data: staff } = await supabase
     .from('staff_members')
@@ -13,7 +13,7 @@ export async function getServerSession() {
     .eq('status', 'active')
     .single()
 
-  if (!staff) redirect('/login')
+  if (!staff) return null
 
   return {
     supabase,
@@ -21,4 +21,10 @@ export async function getServerSession() {
     academyId: staff.academy_id as string,
     role: staff.role as string,
   }
+}
+
+export async function getServerSession() {
+  const session = await readServerSession()
+  if (!session) redirect('/login')
+  return session
 }

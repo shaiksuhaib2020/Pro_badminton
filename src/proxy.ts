@@ -51,6 +51,12 @@ export default async function proxy(request: NextRequest) {
 
   // All other routes require auth
   if (!user) {
+    if (pathname === '/api/reports/fees' || pathname === '/api/reports/accounts') {
+      const report = pathname === '/api/reports/fees' ? 'fees' : 'accounts'
+      return NextResponse.json({ error: `Your session has ended. Sign in to see the ${report} report.` }, {
+        status: 401, headers: { 'Cache-Control': 'private, no-store' },
+      })
+    }
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

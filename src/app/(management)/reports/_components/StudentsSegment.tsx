@@ -8,6 +8,7 @@ import {
 import { mockStudents } from '@/lib/mock-data'
 import { subMonths, format, parseISO, differenceInMonths } from 'date-fns'
 import { calcAge, formatDate } from '@/lib/utils'
+import { useReportExporter } from '../export'
 
 // Theme Colors
 const ACCENT_COLOR = '#3B6BE8'
@@ -30,12 +31,15 @@ const enrollmentTrendData = [
   { name: 'Sep', students: 185 },
 ]
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+type TooltipEntry = { color?: string; name: string; value: string | number }
+type TooltipProps = { active?: boolean; payload?: TooltipEntry[]; label?: string }
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white border border-so-border rounded-lg shadow-md p-3 text-sm">
         <p className="font-semibold text-so-text mb-2">{label}</p>
-        {payload.map((entry: any, index: number) => (
+        {payload.map((entry, index) => (
           <div key={index} className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
             <p className="text-so-muted">
@@ -117,8 +121,48 @@ export default function StudentsSegment() {
     .filter(s => s.status === 'dropout')
     .sort((a, b) => (b.dropoutDate ?? '').localeCompare(a.dropoutDate ?? ''))
 
+  useReportExporter(() => ({
+    title: 'Students Report',
+    dateRange: `${growthRange === 'custom' ? `${growthCustomStart || 'Not set'} to ${growthCustomEnd || 'Not set'}` : growthRange === '3m' ? 'Last 3 months' : 'Last 6 months'}`,
+    metrics: [
+      ['Active students', mockStudents.filter(s => !['inactive', 'dropout'].includes(s.status)).length],
+      ['New enrollments in range', growthData.reduce((sum, row) => sum + row.new, 0)],
+      ['Dropouts in range', growthData.reduce((sum, row) => sum + row.exits, 0)],
+      ['Students with DOB', activeWithAge.length],
+    ],
+    sections: [
+      {
+        title: 'Enrollment Growth',
+        columns: ['Month', 'New enrollments', 'Exits / Dropouts'],
+        rows: growthData.map(row => [row.name, row.new, row.exits]),
+      },
+      {
+        title: 'Age Distribution',
+        columns: ['Age group', 'Students'],
+        rows: ageData.map(row => [row.label, row.count]),
+      },
+      {
+        title: 'Enrollment Sources',
+        columns: ['Source', 'Students'],
+        rows: SOURCE_CONFIG.map(source => [
+          source.label,
+          mockStudents.filter(student => student.enrollmentSource === source.key && !['inactive', 'dropout'].includes(student.status)).length,
+        ]),
+      },
+      {
+        title: 'Recent Dropouts',
+        columns: ['Name', 'Phone', 'Guardian', 'Date', 'Reason'],
+        rows: recentDropouts.map(student => [
+          student.name, student.phone, student.guardianName || '—',
+          student.dropoutDate ? formatDate(student.dropoutDate) : '—',
+          student.dropoutReason || '—',
+        ]),
+      },
+    ],
+  }))
+
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Enrollment Trend */}

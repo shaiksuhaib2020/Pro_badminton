@@ -1,0 +1,12 @@
+@media (prefers-reduced-motion: no-preference) {
+  .segment {
+    animation: segment-in 300ms ease-out;
+  }
+}
+
+@keyframes segment-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}

@@ -6,11 +6,34 @@ import { mockAttendance, mockBatches, mockStudents } from '@/lib/mock-data'
 import {
   parseISO, format, subDays, subMonths,
   startOfWeek, startOfMonth, endOfMonth,
-  isWithinInterval
 } from 'date-fns'
-import { getTodayIST, formatDate } from '@/lib/utils'
+import { getTodayIST } from '@/lib/utils'
+import { useReportExporter } from '../export'
 
 type FilterKey = 'today'|'yesterday'|'this-week'|'this-month'|'last-month'|'custom'
+type TooltipEntry = { color?: string; payload?: { color?: string }; name: string; value: string | number }
+type TooltipProps = { active?: boolean; payload?: TooltipEntry[]; label?: string }
+
+function AttendanceTooltip({ active, payload, label }: TooltipProps) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white border border-so-border rounded-lg shadow-md p-3 text-sm">
+        <p className="font-semibold text-so-text mb-2">{label}</p>
+        {payload.map((entry, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.payload?.color || entry.color }} />
+            <p className="text-so-muted">
+              {entry.name}: <span className="font-medium text-so-text">
+                {entry.value}{entry.name === 'Attendance %' ? '%' : ''}
+              </span>
+            </p>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  return null
+}
 
 function FilterSelect({ value, onChange }: { value: FilterKey; onChange: (v: FilterKey) => void }) {
   return (
@@ -124,7 +147,7 @@ export default function AttendanceSegment() {
   const ovRecs = mockAttendance.filter(r => r.date.startsWith(ovMonthStr))
   const activeStudents = mockStudents.filter(s => !['inactive','dropout'].includes(s.status))
 
-  const studentRates = activeStudents.map(s => {
+  const allStudentRates = activeStudents.map(s => {
     let present = 0, total = 0
     ovRecs.forEach(r => {
       if (r.records[s.id] !== undefined) {
@@ -136,31 +159,47 @@ export default function AttendanceSegment() {
   })
   .filter(r => r.rate !== null && r.rate < activePct)
   .sort((a, b) => (a.rate ?? 0) - (b.rate ?? 0))
+  const studentRates = allStudentRates
   .slice(0, Number(topN))
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white border border-so-border rounded-lg shadow-md p-3 text-sm">
-          <p className="font-semibold text-so-text mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.payload.color || entry.color }} />
-              <p className="text-so-muted">
-                {entry.name}: <span className="font-medium text-so-text">
-                  {entry.value}{entry.name === 'Attendance %' ? '%' : ''}
-                </span>
-              </p>
-            </div>
-          ))}
-        </div>
-      )
+  useReportExporter(() => {
+    const allAttendanceRows = mockAttendance
+      .filter(record => inRange(record.date, donutRange.start, donutRange.end))
+      .flatMap(record => Object.entries(record.records).map(([studentId, status]) => {
+        const student = mockStudents.find(item => item.id === studentId)
+        return [record.date, student?.name || studentId, student?.currentBatch || 'Unknown', status]
+      }))
+    return {
+      title: 'Attendance Report',
+      dateRange: `Batch chart: ${barRange.start} to ${barRange.end}; overall: ${donutRange.start} to ${donutRange.end}; overview: ${format(new Date(ovYear, ovMonth), 'MMMM yyyy')}`,
+      metrics: [
+        ['Present marks', dPresent],
+        ['Absent marks', dAbsent],
+        ['Attendance rate', `${dPresentPct}%`],
+        ['Students below threshold', allStudentRates.length],
+      ],
+      sections: [
+        {
+          title: 'Batch-wise Attendance',
+          columns: ['Batch', 'Attendance rate', 'Sessions'],
+          rows: batchBarData.map(row => [row.name, `${row.rate}%`, row.sessions]),
+        },
+        {
+          title: 'Attendance Records',
+          columns: ['Date', 'Student', 'Batch', 'Status'],
+          rows: allAttendanceRows,
+        },
+        {
+          title: `Students Below ${activePct}%`,
+          columns: ['Name', 'Batch', 'Attendance rate'],
+          rows: allStudentRates.map(row => [row.student.name, row.student.currentBatch, `${row.rate}%`]),
+        },
+      ],
     }
-    return null
-  }
+  })
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
       
       {/* Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -194,7 +233,7 @@ export default function AttendanceSegment() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
                   <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(val) => `${val}%`} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<AttendanceTooltip />} />
                   <Bar dataKey="rate" name="Attendance %" radius={[4, 4, 0, 0]}>
                     {batchBarData.map((entry, index) => {
                       const color = entry.rate >= 80 ? '#059669' : entry.rate >= 60 ? '#D97706' : '#DC2626'
@@ -239,7 +278,7 @@ export default function AttendanceSegment() {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<AttendanceTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -287,7 +326,10 @@ export default function AttendanceSegment() {
             <div className="flex items-center gap-2 bg-so-surface border border-so-border rounded-lg px-2 py-1">
               <select
                 value={threshold}
-                onChange={e => setThreshold(e.target.value as any)}
+                onChange={e => {
+                  const value = e.target.value
+                  setThreshold(value === 'custom' ? 'custom' : Number(value) as 50|60|70|80)
+                }}
                 className="bg-transparent text-xs text-so-text focus:outline-none cursor-pointer"
               >
                 <option value={50}>Below 50%</option>
@@ -308,7 +350,7 @@ export default function AttendanceSegment() {
             </div>
             <select
               value={topN}
-              onChange={e => setTopN(Number(e.target.value) as any)}
+              onChange={e => setTopN(Number(e.target.value) as 3|5|10)}
               className="bg-so-surface border border-so-border rounded-lg px-2 py-1 text-xs text-so-text focus:outline-none cursor-pointer"
             >
               <option value={3}>Top 3</option>
