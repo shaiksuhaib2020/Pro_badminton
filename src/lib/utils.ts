@@ -2,12 +2,12 @@
  * Format a number as Indian Rupees
  * e.g. 1500  "1,500"
  */
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount: number, { fractionDigits = 0 } = {}): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(amount)
 }
 
@@ -73,7 +73,7 @@ export function getFirstDayOfMonthIST(): string {
   return `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-import { parseISO, differenceInDays } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 
 export const calcAge = (dob: string): number => {
   if (!dob) return 0;
@@ -86,11 +86,13 @@ export const calcAge = (dob: string): number => {
 }
 
 export function deriveStudentStatus(nextDueDateStr: string): 'active' | 'due-soon' | 'expired' {
-  const today = new Date()
-  const due   = parseISO(nextDueDateStr)
-  const diff  = differenceInDays(due, today)
-  if (diff < 0)  return 'expired'
-  if (diff <= 3) return 'due-soon'
+  if (!nextDueDateStr) return 'active'
+  const dueDate = nextDueDateStr.slice(0, 10)
+  const todayIST = getTodayIST()
+  const plus3IST = format(addDays(parseISO(todayIST), 3), 'yyyy-MM-dd')
+
+  if (dueDate < todayIST) return 'expired'
+  if (dueDate <= plus3IST) return 'due-soon'
   return 'active'
 }
 
