@@ -1,0 +1,36 @@
+# Badminton Wing - direct npm dependency versions installed in this workspace
+# This is a Node.js/Next.js project. This file is a reference, not a pip manifest.
+# Transitive dependencies and platform-specific packages are in package-lock.json.
+#
+# Local toolchain: Node.js 24.14.1; npm 11.11.0
+# To reproduce the project on another system:
+# 1. Clone the repository, including package.json and package-lock.json.
+# 2. Install the toolchain versions above for a matching development environment.
+# 3. Run: npm ci
+# 4. Configure .env.local with your authorized Supabase project URL and anon key:
+#    NEXT_PUBLIC_SUPABASE_URL
+#    NEXT_PUBLIC_SUPABASE_ANON_KEY
+# 5. Run: npm run dev
+# Use Git to share source changes; keep .env.local and node_modules out of Git.
+# Do not use pip install -r requirements.txt; npm ci installs from the lockfile.
+
+# Application dependencies
+@supabase/ssr@0.12.4
+@supabase/supabase-js@2.112.3
+date-fns@4.4.0
+emoji-picker-react@4.22.2
+lucide-react@1.34.0
+next@16.3.1
+react@19.2.8
+react-dom@19.2.8
+recharts@3.10.1
+
+# Development dependencies
+@tailwindcss/postcss@4.3.3
+@types/node@20.19.43
+@types/react@19.2.18
+@types/react-dom@19.2.4
+eslint@9.39.5
+eslint-config-next@16.3.1
+tailwindcss@4.3.3
+typescript@5.9.3
